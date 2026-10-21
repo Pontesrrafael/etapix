@@ -21,7 +21,7 @@ use chrono::NaiveDateTime;
 use crate::calendar::{At, Calendar, Calendars, Shift};
 use crate::cpm::TaskSchedule;
 use crate::mspdi::NS;
-use crate::model::{Constraint, LinkType, Project, TaskType, Wm};
+use crate::model::{Constraint, LinkType, Project, ResourceKind, TaskType, Wm};
 
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
@@ -262,7 +262,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
              <OutlineLevel>{level}</OutlineLevel><Priority>{}</Priority>\
              <Start>{}</Start><Finish>{}</Finish><Duration>{}</Duration>{}<DurationFormat>{}</DurationFormat>\
              {}{}<EffortDriven>{}</EffortDriven><Summary>{}</Summary>\
-             <PercentComplete>{}</PercentComplete>{}{}{}\
+             <FixedCost>{}</FixedCost><FixedCostAccrual>{}</FixedCostAccrual><PercentComplete>{}</PercentComplete>{}{}{}\
              <ConstraintType>{ctype}</ConstraintType><CalendarUID>{}</CalendarUID>{}{}\
              <LevelingCanSplit>{}</LevelingCanSplit><LevelingDelay>{}</LevelingDelay><LevelingDelayFormat>8</LevelingDelayFormat><IgnoreResourceCalendar>{}</IgnoreResourceCalendar>",
             t.uid,
@@ -289,6 +289,8 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             }),
             u8::from(t.effort_driven),
             u8::from(t.summary),
+            (t.fixed_cost * 100.0).round(),
+            t.fixed_cost_accrual,
             p.percent_complete,
             opt("ActualStart", p.actual_start),
             opt("ActualFinish", p.actual_finish),
@@ -329,15 +331,50 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
 
     out.push_str("<Resources>");
     for (r, res) in project.resources.iter().enumerate() {
+        let first = res.rate_at(project.start);
+        // Dated rate periods (cost rate table A), when the rate changes over time.
+        let rates = if res.rates.len() > 1 {
+            let mut x = String::from("<Rates>");
+            for (k, rt) in res.rates.iter().enumerate() {
+                let to = res.rates.get(k + 1).map_or("2149-12-31T23:59:00".to_string(), |n| dt(n.from));
+                let _ = write!(
+                    x,
+                    "<Rate><RatesFrom>{}</RatesFrom><RatesTo>{to}</RatesTo><RateTable>0</RateTable>\
+                     <StandardRate>{}</StandardRate><StandardRateFormat>2</StandardRateFormat>\
+                     <OvertimeRate>{}</OvertimeRate><OvertimeRateFormat>2</OvertimeRateFormat>\
+                     <CostPerUse>{}</CostPerUse></Rate>",
+                    dt(rt.from),
+                    rt.standard,
+                    rt.overtime,
+                    (rt.per_use * 100.0).round()
+                );
+            }
+            x.push_str("</Rates>");
+            x
+        } else {
+            String::new()
+        };
         let _ = write!(
             out,
-            "<Resource><UID>{}</UID><ID>{}</ID><Name>{}</Name><Type>1</Type><MaxUnits>{:.2}</MaxUnits>\
-             <CalendarUID>{}</CalendarUID></Resource>",
+            "<Resource><UID>{}</UID><ID>{}</ID><Name>{}</Name><Type>{}</Type><MaxUnits>{:.2}</MaxUnits>\
+             <StandardRate>{}</StandardRate><StandardRateFormat>{}</StandardRateFormat>\
+             <OvertimeRate>{}</OvertimeRate><OvertimeRateFormat>2</OvertimeRateFormat>\
+             <CostPerUse>{}</CostPerUse><CalendarUID>{}</CalendarUID>{}</Resource>",
             res.uid,
             r + 1,
             esc(&res.name),
+            match res.kind {
+                ResourceKind::Material => 0,
+                ResourceKind::Work => 1,
+                ResourceKind::Cost => 2,
+            },
             res.max_units,
-            first_resource_cal + r
+            first.standard,
+            if res.kind == ResourceKind::Material { 8 } else { 2 },
+            first.overtime,
+            (first.per_use * 100.0).round(),
+            first_resource_cal + r,
+            rates,
         );
     }
     out.push_str("</Resources>");
@@ -370,11 +407,14 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         };
         let _ = write!(
             out,
-            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>{started}             <Finish>{}</Finish><RemainingWork>{}</RemainingWork><Start>{}</Start>{dates}             <Units>{}</Units><Work>{}</Work>{tp}</Assignment>",
+            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>{started}             <Finish>{}</Finish><OvertimeWork>{}</OvertimeWork><RegularWork>{}</RegularWork><RemainingOvertimeWork>{}</RemainingOvertimeWork><RemainingWork>{}</RemainingWork><Start>{}</Start>{dates}             <Units>{}</Units><Work>{}</Work>{tp}</Assignment>",
             k + 1,
             project.tasks[a.task].uid,
             project.resources[a.resource].uid,
             at(cals.assignment(k).finish_after(tl.start_at(first), a.span())),
+            duration(a.overtime_work),
+            duration(total - a.overtime_work),
+            duration(a.overtime_work),
             duration(total - actual),
             at(tl.start_at(first)),
             a.units,

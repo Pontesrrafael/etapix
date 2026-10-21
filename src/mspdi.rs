@@ -9,7 +9,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use roxmltree::{Document, Node};
 
 use crate::calendar::{Calendar, Calendars, Exception, Shift};
-use crate::model::{Assignment, Constraint, Link, LinkType, Piece, Progress, Project, Resource, Task, TaskType, Wm};
+use crate::model::{Assignment, Constraint, Link, LinkType, Piece, Progress, Project, Rate, Resource, ResourceKind, Task, TaskType, Wm};
 
 pub const NS: &str = "http://schemas.microsoft.com/project";
 
@@ -49,6 +49,8 @@ pub struct TaskResult {
     pub duration: Wm,
     /// Minutes of work.
     pub work: Wm,
+    /// Currency units.
+    pub cost: f64,
 }
 
 /// One assignment as Project wrote it.
@@ -61,6 +63,8 @@ pub struct AssignmentResult {
     pub work: Wm,
     pub start: NaiveDateTime,
     pub finish: NaiveDateTime,
+    /// Currency units.
+    pub cost: f64,
 }
 
 pub fn read_assignment_results(xml: &str) -> Result<Vec<AssignmentResult>> {
@@ -83,6 +87,7 @@ pub fn read_assignment_results(xml: &str) -> Result<Vec<AssignmentResult>> {
                 work: parse_duration(req(a, "Work")?)?,
                 start: parse_datetime(req(a, "Start")?)?,
                 finish: parse_datetime(req(a, "Finish")?)?,
+                cost: text(a, "Cost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
             })
         })
         .collect()
@@ -279,6 +284,44 @@ fn nth_in_month(y: i32, m: u32, position: i64, item: i64) -> Result<Option<Naive
     })
 }
 
+/// A rate value in currency per hour (per unit for materials, format 8).
+fn per_hour(value: f64, format: Option<&str>) -> f64 {
+    match format {
+        Some("1") => value * 60.0,
+        Some("3") => value / 8.0,
+        Some("4") => value / 40.0,
+        Some("5") => value / 160.0,
+        _ => value,
+    }
+}
+
+/// Cost rate table A: its dated `<Rate>` periods, or the resource's own rates when there are none.
+/// Rates are plain currency per period; cost per use is in cents.
+fn read_rates(node: Node) -> Result<Vec<Rate>> {
+    let num = |n: Node, tag: &str| text(n, tag).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+    let rate = |n: Node, from: NaiveDateTime| Rate {
+        from,
+        standard: per_hour(num(n, "StandardRate"), text(n, "StandardRateFormat")),
+        overtime: per_hour(num(n, "OvertimeRate"), text(n, "OvertimeRateFormat")),
+        per_use: num(n, "CostPerUse") / 100.0,
+    };
+    let mut rates = Vec::new();
+    for r in child(node, "Rates").into_iter().flat_map(|r| children(r, "Rate")) {
+        if text(r, "RateTable").unwrap_or("0") == "0" {
+            rates.push(rate(r, parse_datetime(req(r, "RatesFrom")?)?));
+        }
+    }
+    if rates.is_empty() {
+        let epoch = NaiveDate::from_ymd_opt(1984, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap();
+        rates.push(rate(node, epoch));
+    } else if let Some(first) = rates.first_mut() {
+        // The first period's per-use cost is written in cents on the resource itself.
+        first.per_use = first.per_use.max(num(node, "CostPerUse") / 100.0);
+    }
+    rates.sort_by_key(|r| r.from);
+    Ok(rates)
+}
+
 /// MSPDI duration and lag formats counted in elapsed time (em, eh, ed, ew, emo and their
 /// estimated variants).
 fn is_elapsed_format(format: Option<&str>) -> bool {
@@ -386,6 +429,9 @@ pub fn read_project(xml: &str) -> Result<Project> {
             } else {
                 None
             },
+            // Money is stored in cents.
+            fixed_cost: text(*node, "FixedCost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
+            fixed_cost_accrual: text(*node, "FixedCostAccrual").and_then(|v| v.parse().ok()).unwrap_or(3),
             leveling_delay: text(*node, "LevelingDelay").map_or(Ok(0), |_| int(*node, "LevelingDelay"))? / 10,
             progress: Progress {
                 percent_complete: text(*node, "PercentComplete").map_or(Ok(0), |_| int(*node, "PercentComplete"))? as u32,
@@ -404,10 +450,17 @@ pub fn read_project(xml: &str) -> Result<Project> {
             continue; // UID 0 is Project's placeholder resource
         }
         res_index.insert(uid, resources.len());
+        let kind = match text(node, "Type") {
+            Some("0") => ResourceKind::Material,
+            Some("2") => ResourceKind::Cost,
+            _ => ResourceKind::Work,
+        };
         resources.push(Resource {
             uid,
             name: text(node, "Name").unwrap_or_default().to_string(),
-            max_units: float(node, "MaxUnits")?,
+            kind,
+            rates: read_rates(node)?,
+            max_units: if kind == ResourceKind::Work { float(node, "MaxUnits")? } else { 1.0 },
             calendar: calendar_of(text(node, "CalendarUID").map_or(Ok(-1), |_| int(node, "CalendarUID"))?)?,
         });
     }
@@ -421,7 +474,9 @@ pub fn read_project(xml: &str) -> Result<Project> {
         let (Some(&task), Some(&resource)) = (index.get(&task_uid), res_index.get(&res_uid)) else {
             continue; // unassigned placeholder rows
         };
-        assignments.push(Assignment::uniform(task, resource, float(node, "Units")?, 0, 0.0));
+        let mut a = Assignment::uniform(task, resource, float(node, "Units")?, 0, 0.0);
+        a.overtime_work = text(node, "OvertimeWork").map(parse_duration).transpose()?.unwrap_or(0);
+        assignments.push(a);
         timing.push((
             parse_datetime(req(task_nodes[task], "Start")?)?,
             parse_datetime(req(node, "Start")?)?,
@@ -476,6 +531,12 @@ pub fn read_project(xml: &str) -> Result<Project> {
         }
         let covered: Wm = profile.iter().map(|p| p.len).sum();
         a.profile = if !profile.is_empty() && covered == len {
+            // Timephased stretches hold regular work only; scale them to the total work
+            // (overtime included) so the profile's work matches the assignment's.
+            let timephased: f64 = profile.iter().map(|p| p.len as f64 * p.rate).sum();
+            if timephased > 0.0 && (timephased - work).abs() > 0.5 {
+                profile.iter_mut().for_each(|p| p.rate *= work / timephased);
+            }
             profile
         } else {
             vec![Piece { len, rate: if len > 0 { work / len as f64 } else { 0.0 } }]
@@ -506,6 +567,7 @@ pub fn read_results(xml: &str) -> Result<Vec<TaskResult>> {
                 leveling_delay: int(t, "LevelingDelay")? / 10,
                 duration: parse_duration(req(t, "Duration")?)?,
                 work: parse_duration(req(t, "Work")?)?,
+                cost: text(t, "Cost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
             })
         })
         .collect()

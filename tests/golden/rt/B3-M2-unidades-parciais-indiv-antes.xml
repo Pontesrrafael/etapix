@@ -3,10 +3,10 @@
 	<SaveVersion>14</SaveVersion>
 	<BuildNumber>16.0.20430.20182</BuildNumber>
 	<Name>B3-M2-unidades-parciais-indiv-antes.xml</Name>
-	<GUID>5D9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+	<GUID>C1D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 	<Title>B3-M2-unidades-parciais-indiv-antes</Title>
 	<CreationDate>2026-10-21T08:00:00</CreationDate>
-	<LastSaved>2026-10-21T16:05:00</LastSaved>
+	<LastSaved>2026-10-21T16:37:00</LastSaved>
 	<ScheduleFromStart>1</ScheduleFromStart>
 	<StartDate>2026-11-02T08:00:00</StartDate>
 	<FinishDate>2026-11-04T18:00:00</FinishDate>
@@ -106,7 +106,7 @@
 	<Calendars>
 		<Calendar>
 			<UID>1</UID>
-			<GUID>6A9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>CED39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Padrão</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -194,7 +194,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>2</UID>
-			<GUID>6B9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>CFD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>R1</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -282,7 +282,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>3</UID>
-			<GUID>6C9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D0D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>R2</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -370,7 +370,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>4</UID>
-			<GUID>6D9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D1D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Sem alocação</Name>
 			<IsBaseCalendar>0</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -378,7 +378,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>5</UID>
-			<GUID>6E9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D2D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Sem alocação</Name>
 			<IsBaseCalendar>0</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -388,14 +388,14 @@
 	<Tasks>
 		<Task>
 			<UID>0</UID>
-			<GUID>5F9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>C3D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>B3-M2-unidades-parciais-indiv-antes</Name>
 			<Active>1</Active>
 			<Manual>0</Manual>
 			<Type>1</Type>
 			<IsNull>0</IsNull>
-			<CreateDate>2026-10-21T16:05:00</CreateDate>
+			<CreateDate>2026-10-21T16:37:00</CreateDate>
 			<WBS>0</WBS>
 			<OutlineNumber>0</OutlineNumber>
 			<OutlineLevel>0</OutlineLevel>
@@ -476,7 +476,7 @@
 		</Task>
 		<Task>
 			<UID>1</UID>
-			<GUID>659AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>C9D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>T1_R1+R2meio</Name>
 			<Active>1</Active>
@@ -564,7 +564,7 @@
 		</Task>
 		<Task>
 			<UID>2</UID>
-			<GUID>669AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>CAD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>T2_R2meio</Name>
 			<Active>1</Active>
@@ -652,7 +652,7 @@
 		</Task>
 		<Task>
 			<UID>3</UID>
-			<GUID>679AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>CBD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>T3_R2</Name>
 			<Active>1</Active>
@@ -782,13 +782,13 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
 		<Resource>
 			<UID>1</UID>
-			<GUID>6D9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D1D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>R1</Name>
 			<Type>1</Type>
@@ -829,13 +829,13 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
 		<Resource>
 			<UID>2</UID>
-			<GUID>6E9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D2D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>R2</Name>
 			<Type>1</Type>
@@ -876,7 +876,7 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
@@ -884,7 +884,7 @@
 	<Assignments>
 		<Assignment>
 			<UID>1</UID>
-			<GUID>6F9AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D3D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>1</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -928,7 +928,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -958,7 +958,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>2</UID>
-			<GUID>709AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D4D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>2</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -1002,7 +1002,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -1032,7 +1032,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>3</UID>
-			<GUID>719AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D5D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>2</TaskUID>
 			<ResourceUID>2</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -1076,7 +1076,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -1098,7 +1098,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>4</UID>
-			<GUID>729AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D6D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>3</TaskUID>
 			<ResourceUID>2</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -1142,7 +1142,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -1166,25 +1166,25 @@
 	<BoardColumns>
 		<BoardColumn>
 			<UID>1</UID>
-			<GUID>749AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D8D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Não Iniciada</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>2</UID>
-			<GUID>759AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>D9D39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Próximo</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>3</UID>
-			<GUID>769AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>DAD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>Em andamento</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>4</UID>
-			<GUID>779AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>DBD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>Concluído</Name>
 		</BoardColumn>
@@ -1192,7 +1192,7 @@
 	<Sprints>
 		<Sprint>
 			<UID>1</UID>
-			<GUID>789AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>DCD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Nenhum Sprint</Name>
 			<DurationUnits>39</DurationUnits>
@@ -1200,7 +1200,7 @@
 		</Sprint>
 		<Sprint>
 			<UID>2</UID>
-			<GUID>799AC9CA-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>DDD39A44-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Sprint 1</Name>
 			<Start>2026-11-02T08:00:00</Start>

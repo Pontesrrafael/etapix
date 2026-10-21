@@ -3,10 +3,10 @@
 	<SaveVersion>14</SaveVersion>
 	<BuildNumber>16.0.20430.20182</BuildNumber>
 	<Name>B3-FD-4-work-80h.xml</Name>
-	<GUID>4E29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+	<GUID>FE157338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 	<Title>B3-FD-4-work-80h</Title>
 	<CreationDate>2026-10-21T08:00:00</CreationDate>
-	<LastSaved>2026-10-21T16:05:00</LastSaved>
+	<LastSaved>2026-10-21T16:37:00</LastSaved>
 	<ScheduleFromStart>1</ScheduleFromStart>
 	<StartDate>2026-11-02T08:00:00</StartDate>
 	<FinishDate>2026-11-09T18:00:00</FinishDate>
@@ -106,7 +106,7 @@
 	<Calendars>
 		<Calendar>
 			<UID>1</UID>
-			<GUID>5929D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>09167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Padrão</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -194,7 +194,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>2</UID>
-			<GUID>5A29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0A167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>R1</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -282,7 +282,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>3</UID>
-			<GUID>5B29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0B167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>R2</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -370,7 +370,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>4</UID>
-			<GUID>5C29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0C167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Sem alocação</Name>
 			<IsBaseCalendar>0</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -378,7 +378,7 @@
 		</Calendar>
 		<Calendar>
 			<UID>5</UID>
-			<GUID>5D29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0D167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Sem alocação</Name>
 			<IsBaseCalendar>0</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -388,14 +388,14 @@
 	<Tasks>
 		<Task>
 			<UID>0</UID>
-			<GUID>5029D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>00167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>B3-FD-4-work-80h</Name>
 			<Active>1</Active>
 			<Manual>0</Manual>
 			<Type>1</Type>
 			<IsNull>0</IsNull>
-			<CreateDate>2026-10-21T16:05:00</CreateDate>
+			<CreateDate>2026-10-21T16:37:00</CreateDate>
 			<WBS>0</WBS>
 			<OutlineNumber>0</OutlineNumber>
 			<OutlineLevel>0</OutlineLevel>
@@ -408,7 +408,7 @@
 			<ManualDuration>PT48H0M0S</ManualDuration>
 			<DurationFormat>21</DurationFormat>
 			<FreeformDurationFormat>7</FreeformDurationFormat>
-			<Work>PT80H0M0S</Work>
+			<Work>PT79H59M60S</Work>
 			<ResumeValid>0</ResumeValid>
 			<EffortDriven>0</EffortDriven>
 			<Recurring>0</Recurring>
@@ -447,7 +447,7 @@
 			<RegularWork>PT80H0M0S</RegularWork>
 			<RemainingDuration>PT48H0M0S</RemainingDuration>
 			<RemainingCost>0</RemainingCost>
-			<RemainingWork>PT80H0M0S</RemainingWork>
+			<RemainingWork>PT79H59M60S</RemainingWork>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
 			<ACWP>0.00</ACWP>
@@ -476,7 +476,7 @@
 		</Task>
 		<Task>
 			<UID>1</UID>
-			<GUID>5629D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>06167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>X</Name>
 			<Active>1</Active>
@@ -496,7 +496,7 @@
 			<ManualDuration>PT48H0M0S</ManualDuration>
 			<DurationFormat>7</DurationFormat>
 			<FreeformDurationFormat>39</FreeformDurationFormat>
-			<Work>PT80H0M0S</Work>
+			<Work>PT79H59M60S</Work>
 			<ResumeValid>0</ResumeValid>
 			<EffortDriven>0</EffortDriven>
 			<Recurring>0</Recurring>
@@ -535,7 +535,7 @@
 			<RegularWork>PT80H0M0S</RegularWork>
 			<RemainingDuration>PT48H0M0S</RemainingDuration>
 			<RemainingCost>0</RemainingCost>
-			<RemainingWork>PT80H0M0S</RemainingWork>
+			<RemainingWork>PT79H59M60S</RemainingWork>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
 			<ACWP>0.00</ACWP>
@@ -606,13 +606,13 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
 		<Resource>
 			<UID>1</UID>
-			<GUID>5C29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0C167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>R1</Name>
 			<Type>1</Type>
@@ -622,11 +622,11 @@
 			<OverAllocated>0</OverAllocated>
 			<CanLevel>1</CanLevel>
 			<AccrueAt>3</AccrueAt>
-			<Work>PT26H42M0S</Work>
-			<RegularWork>PT26H42M0S</RegularWork>
+			<Work>PT26H39M60S</Work>
+			<RegularWork>PT26H39M60S</RegularWork>
 			<OvertimeWork>PT0H0M0S</OvertimeWork>
 			<ActualWork>PT0H0M0S</ActualWork>
-			<RemainingWork>PT26H42M0S</RemainingWork>
+			<RemainingWork>PT26H39M60S</RemainingWork>
 			<ActualOvertimeWork>PT0H0M0S</ActualOvertimeWork>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -641,7 +641,7 @@
 			<ActualOvertimeCost>0</ActualOvertimeCost>
 			<RemainingCost>0</RemainingCost>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
-			<WorkVariance>1602000.00</WorkVariance>
+			<WorkVariance>1600000.00</WorkVariance>
 			<CostVariance>0</CostVariance>
 			<SV>0.00</SV>
 			<CV>0.00</CV>
@@ -653,13 +653,13 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
 		<Resource>
 			<UID>2</UID>
-			<GUID>5D29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0D167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>R2</Name>
 			<Type>1</Type>
@@ -669,11 +669,11 @@
 			<OverAllocated>1</OverAllocated>
 			<CanLevel>1</CanLevel>
 			<AccrueAt>3</AccrueAt>
-			<Work>PT53H18M0S</Work>
-			<RegularWork>PT53H18M0S</RegularWork>
+			<Work>PT53H19M60S</Work>
+			<RegularWork>PT53H19M60S</RegularWork>
 			<OvertimeWork>PT0H0M0S</OvertimeWork>
 			<ActualWork>PT0H0M0S</ActualWork>
-			<RemainingWork>PT53H18M0S</RemainingWork>
+			<RemainingWork>PT53H19M60S</RemainingWork>
 			<ActualOvertimeWork>PT0H0M0S</ActualOvertimeWork>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -688,7 +688,7 @@
 			<ActualOvertimeCost>0</ActualOvertimeCost>
 			<RemainingCost>0</RemainingCost>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
-			<WorkVariance>3198000.00</WorkVariance>
+			<WorkVariance>3200000.00</WorkVariance>
 			<CostVariance>0</CostVariance>
 			<SV>0.00</SV>
 			<CV>0.00</CV>
@@ -700,7 +700,7 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
@@ -708,7 +708,7 @@
 	<Assignments>
 		<Assignment>
 			<UID>1</UID>
-			<GUID>5E29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0E167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>1</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -726,7 +726,7 @@
 			<Delay>0</Delay>
 			<Finish>2026-11-09T18:00:00</Finish>
 			<FinishVariance>0</FinishVariance>
-			<WorkVariance>1602000.00</WorkVariance>
+			<WorkVariance>1600000.00</WorkVariance>
 			<HasFixedRateUnits>1</HasFixedRateUnits>
 			<FixedMaterial>0</FixedMaterial>
 			<LevelingDelay>0</LevelingDelay>
@@ -736,69 +736,109 @@
 			<Overallocated>0</Overallocated>
 			<OvertimeCost>0</OvertimeCost>
 			<OvertimeWork>PT0H0M0S</OvertimeWork>
-			<RegularWork>PT26H42M0S</RegularWork>
+			<RegularWork>PT26H39M60S</RegularWork>
 			<RemainingCost>0</RemainingCost>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
-			<RemainingWork>PT26H42M0S</RemainingWork>
+			<RemainingWork>PT26H39M60S</RemainingWork>
 			<ResponsePending>0</ResponsePending>
 			<Start>2026-11-02T09:00:00</Start>
 			<StartVariance>0</StartVariance>
 			<Units>0.5</Units>
 			<UpdateNeeded>0</UpdateNeeded>
 			<VAC>0.00</VAC>
-			<Work>PT26H42M0S</Work>
+			<Work>PT26H39M60S</Work>
 			<WorkContour>0</WorkContour>
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-02T09:00:00</Start>
+				<Finish>2026-11-02T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT1H39M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-02T13:00:00</Start>
 				<Finish>2026-11-03T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT2H46M40S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-03T09:00:00</Start>
+				<Finish>2026-11-03T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT1H39M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-03T13:00:00</Start>
 				<Finish>2026-11-04T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT2H46M40S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-04T09:00:00</Start>
+				<Finish>2026-11-04T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT1H39M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-04T13:00:00</Start>
 				<Finish>2026-11-05T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT2H46M40S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-05T09:00:00</Start>
+				<Finish>2026-11-05T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT1H40M0S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-05T13:00:00</Start>
 				<Finish>2026-11-06T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT2H46M40S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-06T09:00:00</Start>
-				<Finish>2026-11-07T09:00:00</Finish>
+				<Finish>2026-11-06T13:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT1H40M0S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>1</UID>
-				<Start>2026-11-07T09:00:00</Start>
+				<Start>2026-11-06T13:00:00</Start>
+				<Finish>2026-11-07T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT2H46M40S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-07T13:00:00</Start>
 				<Finish>2026-11-09T09:00:00</Finish>
 				<Unit>1</Unit>
 				<Value>PT0H0M0S</Value>
@@ -807,14 +847,22 @@
 				<Type>1</Type>
 				<UID>1</UID>
 				<Start>2026-11-09T09:00:00</Start>
+				<Finish>2026-11-09T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT1H40M0S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>1</UID>
+				<Start>2026-11-09T13:00:00</Start>
 				<Finish>2026-11-09T18:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT4H27M0S</Value>
+				<Value>PT2H46M40S</Value>
 			</TimephasedData>
 		</Assignment>
 		<Assignment>
 			<UID>2</UID>
-			<GUID>5F29D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0F167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>2</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -832,7 +880,7 @@
 			<Delay>0</Delay>
 			<Finish>2026-11-09T18:00:00</Finish>
 			<FinishVariance>0</FinishVariance>
-			<WorkVariance>3198000.00</WorkVariance>
+			<WorkVariance>3200000.00</WorkVariance>
 			<HasFixedRateUnits>1</HasFixedRateUnits>
 			<FixedMaterial>0</FixedMaterial>
 			<LevelingDelay>0</LevelingDelay>
@@ -842,69 +890,109 @@
 			<Overallocated>1</Overallocated>
 			<OvertimeCost>0</OvertimeCost>
 			<OvertimeWork>PT0H0M0S</OvertimeWork>
-			<RegularWork>PT53H18M0S</RegularWork>
+			<RegularWork>PT53H19M60S</RegularWork>
 			<RemainingCost>0</RemainingCost>
 			<RemainingOvertimeCost>0</RemainingOvertimeCost>
 			<RemainingOvertimeWork>PT0H0M0S</RemainingOvertimeWork>
-			<RemainingWork>PT53H18M0S</RemainingWork>
+			<RemainingWork>PT53H19M60S</RemainingWork>
 			<ResponsePending>0</ResponsePending>
 			<Start>2026-11-02T09:00:00</Start>
 			<StartVariance>0</StartVariance>
 			<Units>1</Units>
 			<UpdateNeeded>0</UpdateNeeded>
 			<VAC>0.00</VAC>
-			<Work>PT53H18M0S</Work>
+			<Work>PT53H19M60S</Work>
 			<WorkContour>0</WorkContour>
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T16:05:00</CreationDate>
+			<CreationDate>2026-10-21T16:37:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-02T09:00:00</Start>
+				<Finish>2026-11-02T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT3H19M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-02T13:00:00</Start>
 				<Finish>2026-11-03T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT5H33M20S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-03T09:00:00</Start>
+				<Finish>2026-11-03T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT3H19M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-03T13:00:00</Start>
 				<Finish>2026-11-04T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT5H33M20S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-04T09:00:00</Start>
+				<Finish>2026-11-04T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT3H19M60S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-04T13:00:00</Start>
 				<Finish>2026-11-05T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT5H33M20S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-05T09:00:00</Start>
+				<Finish>2026-11-05T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT3H20M0S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-05T13:00:00</Start>
 				<Finish>2026-11-06T09:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT5H33M20S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-06T09:00:00</Start>
-				<Finish>2026-11-07T09:00:00</Finish>
+				<Finish>2026-11-06T13:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT3H20M0S</Value>
 			</TimephasedData>
 			<TimephasedData>
 				<Type>1</Type>
 				<UID>2</UID>
-				<Start>2026-11-07T09:00:00</Start>
+				<Start>2026-11-06T13:00:00</Start>
+				<Finish>2026-11-07T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT5H33M20S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-07T13:00:00</Start>
 				<Finish>2026-11-09T09:00:00</Finish>
 				<Unit>1</Unit>
 				<Value>PT0H0M0S</Value>
@@ -913,34 +1001,42 @@
 				<Type>1</Type>
 				<UID>2</UID>
 				<Start>2026-11-09T09:00:00</Start>
+				<Finish>2026-11-09T13:00:00</Finish>
+				<Unit>1</Unit>
+				<Value>PT3H20M0S</Value>
+			</TimephasedData>
+			<TimephasedData>
+				<Type>1</Type>
+				<UID>2</UID>
+				<Start>2026-11-09T13:00:00</Start>
 				<Finish>2026-11-09T18:00:00</Finish>
 				<Unit>1</Unit>
-				<Value>PT8H53M0S</Value>
+				<Value>PT5H33M20S</Value>
 			</TimephasedData>
 		</Assignment>
 	</Assignments>
 	<BoardColumns>
 		<BoardColumn>
 			<UID>1</UID>
-			<GUID>6129D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>11167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Não Iniciada</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>2</UID>
-			<GUID>6229D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>12167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Próximo</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>3</UID>
-			<GUID>6329D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>13167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>Em andamento</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>4</UID>
-			<GUID>6429D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>14167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>Concluído</Name>
 		</BoardColumn>
@@ -948,7 +1044,7 @@
 	<Sprints>
 		<Sprint>
 			<UID>1</UID>
-			<GUID>6529D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>15167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Nenhum Sprint</Name>
 			<DurationUnits>39</DurationUnits>
@@ -956,7 +1052,7 @@
 		</Sprint>
 		<Sprint>
 			<UID>2</UID>
-			<GUID>6629D4BE-8ACD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>16167338-8FCD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Sprint 1</Name>
 			<Start>2026-11-02T08:00:00</Start>

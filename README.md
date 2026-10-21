@@ -43,6 +43,7 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 | `calendar` | Calendars (weekly shifts and dated exceptions), the absolute clock, and one timeline per task. A timeline is the task's own calendar, its resources' calendar, their intersection, or elapsed 24/7 time; it maps instants to working minutes and back. |
 | `model` | Tasks, links, constraints, resources and assignments. |
 | `cpm` | Forward and backward passes, total and free slack, critical flag. It also accepts fixed placements produced by leveling. |
+| `cost` | Costs per assignment, task, summary and resource: regular and overtime rates, cost per use, rate changes over time (rate table A), material resources (quantity x unit rate) and fixed costs. |
 | `edit` | How Project recalculates duration, units and work when you add or remove a resource or change duration, units or work. It covers the fixed units, fixed duration and fixed work task types, with and without effort-driven scheduling. |
 | `leveling` | Serial list scheduling, resource by resource, of assignments (Project's default "level individual assignments") or whole tasks, with the ID, Standard and Priority/Standard orders, day/week/hour bases, splitting (also of a single uneven assignment), priority 1000, a leveling date range and "within available slack". Each assignment occupies its resource only while it works. |
 | `mspdi` | Reads MSPDI input and the results Project computed. |
@@ -51,7 +52,9 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 ## Covered
 
 The golden tests pass in full: the 87 leveling and CPM cases in `tests/golden.rs` and every step
-of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 132 files.
+of the 10 edit series in `tests/edits.rs`. Costs match Project to the cent in all 165 golden files (`tests/costs.rs`). The round trip agrees
+on 138 of 139 files; the exception is listed in `tests/roundtrip.rs` (Project's own MSPDI import
+adds overtime on top of work, even for its own export).
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks

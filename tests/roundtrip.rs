@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use pjsched::calendar::Calendars;
+use pjsched::cost::costs;
 use pjsched::cpm;
 use pjsched::mspdi::{read_project, read_results};
 
@@ -18,7 +19,10 @@ fn original(golden: &Path, name: &str) -> PathBuf {
 }
 
 /// Known gaps, each with the reason it is not yet reproduced.
-const KNOWN: &[(&str, &str)] = &[];
+const KNOWN: &[(&str, &str)] = &[(
+    "B17-C5-hora-extra-antes.xml",
+    "overtime: Project's MSPDI import adds overtime on top of work (32h + 8h = 40h), even reopening its own export",
+)];
 
 #[test]
 fn project_recalculates_pjsched_files_identically() {
@@ -33,12 +37,16 @@ fn project_recalculates_pjsched_files_identically() {
         let project = read_project(&std::fs::read_to_string(original(&golden, &name)).unwrap()).unwrap();
         let cals = Calendars::new(&project).unwrap();
         let ours = cpm::schedule(&project, &cals, None).unwrap();
+        let ours_costs = costs(&project, &cals, &ours);
         let theirs = read_results(&std::fs::read_to_string(&rt).unwrap()).unwrap();
         if ours.len() != theirs.len() {
             problems.push(format!("{name}: {} tasks, Project has {}", ours.len(), theirs.len()));
             continue;
         }
-        for (o, t) in ours.iter().zip(&theirs) {
+        for (k, (o, t)) in ours.iter().zip(&theirs).enumerate() {
+            if (ours_costs.task[k] - t.cost).abs() > 0.005 {
+                problems.push(format!("{name} / {}: custo = {:.2}, Project = {:.2}", t.name, ours_costs.task[k], t.cost));
+            }
             let dt = |at| cals.clock.dt(at);
             for (field, got, want) in [
                 ("start", dt(o.start), t.start),

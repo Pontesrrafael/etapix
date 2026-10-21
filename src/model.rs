@@ -73,6 +73,9 @@ pub struct Task {
     pub progress: Progress,
     /// Manually scheduled: the task sits at `manual_start` whatever its links say.
     pub manual: Option<NaiveDateTime>,
+    pub fixed_cost: f64,
+    /// When fixed cost accrues (MSPDI code: 1 start, 2 prorated, 3 end); kept for round trips.
+    pub fixed_cost_accrual: u8,
     /// Leveling delay saved in the file (elapsed minutes): reopening keeps the leveled dates.
     pub leveling_delay: i64,
 }
@@ -87,14 +90,41 @@ pub struct Progress {
     pub resume: Option<NaiveDateTime>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceKind {
+    Work,
+    Material,
+    Cost,
+}
+
+/// Rates in force from `from` on (cost rate table A), in currency per hour (per unit for
+/// materials).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rate {
+    pub from: NaiveDateTime,
+    pub standard: f64,
+    pub overtime: f64,
+    pub per_use: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Resource {
     pub uid: i64,
     pub name: String,
+    pub kind: ResourceKind,
+    /// Ordered by `from`; the first applies before its own date too.
+    pub rates: Vec<Rate>,
     /// 1.0 = 100%.
     pub max_units: f64,
     /// Index into [`Project::calendars`]; `None` = the project calendar.
     pub calendar: Option<usize>,
+}
+
+impl Resource {
+    pub fn rate_at(&self, at: NaiveDateTime) -> Rate {
+        let zero = Rate { from: at, standard: 0.0, overtime: 0.0, per_use: 0.0 };
+        self.rates.iter().rev().find(|r| r.from <= at).or(self.rates.first()).cloned().unwrap_or(zero)
+    }
 }
 
 /// A stretch of an assignment's work at a constant rate (units of the resource).
@@ -113,13 +143,15 @@ pub struct Assignment {
     pub units: f64,
     /// Working minutes (on the task's calendar) between the task start and the assignment start.
     pub offset: Wm,
+    /// Part of the work done as overtime (minutes), charged at the overtime rate.
+    pub overtime_work: Wm,
     pub profile: Vec<Piece>,
 }
 
 impl Assignment {
     /// An assignment working `len` minutes at `rate` from the task start.
     pub fn uniform(task: usize, resource: usize, units: f64, len: Wm, rate: f64) -> Self {
-        Assignment { task, resource, units, offset: 0, profile: vec![Piece { len, rate }] }
+        Assignment { task, resource, units, offset: 0, overtime_work: 0, profile: vec![Piece { len, rate }] }
     }
 
     /// Work in minutes.
