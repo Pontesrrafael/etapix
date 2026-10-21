@@ -38,12 +38,23 @@ fn project_recalculates_pjsched_files_identically() {
         let cals = Calendars::new(&project).unwrap();
         let ours = cpm::schedule(&project, &cals, None).unwrap();
         let ours_costs = costs(&project, &cals, &ours);
+        let ours_tracking = pjsched::tracking::tracking(&project, &cals, &ours, &ours_costs);
         let theirs = read_results(&std::fs::read_to_string(&rt).unwrap()).unwrap();
         if ours.len() != theirs.len() {
             problems.push(format!("{name}: {} tasks, Project has {}", ours.len(), theirs.len()));
             continue;
         }
         for (k, (o, t)) in ours.iter().zip(&theirs).enumerate() {
+            let tr = &ours_tracking[k];
+            for (field, a, b) in [
+                ("variacao_termino", tr.finish_variance as f64, t.finish_variance as f64),
+                ("BCWS", tr.bcws, t.bcws),
+                ("BCWP", tr.bcwp, t.bcwp),
+            ] {
+                if (a - b).abs() > 0.005 {
+                    problems.push(format!("{name} / {}: {field} = {a:.2}, Project = {b:.2}", t.name));
+                }
+            }
             if (ours_costs.task[k] - t.cost).abs() > 0.005 {
                 problems.push(format!("{name} / {}: custo = {:.2}, Project = {:.2}", t.name, ours_costs.task[k], t.cost));
             }

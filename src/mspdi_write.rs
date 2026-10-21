@@ -322,6 +322,24 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
                 if link.lag_elapsed { 8 } else { 7 }
             );
         }
+        if let Some(b) = &t.baseline {
+            let _ = write!(
+                out,
+                "<Baseline><Number>0</Number><Start>{}</Start><Finish>{}</Finish><Duration>{}</Duration>                 <Work>{}</Work><Cost>{}</Cost></Baseline>",
+                dt(b.start),
+                dt(b.finish),
+                duration(b.duration),
+                duration(b.work.round() as Wm),
+                (b.cost * 100.0).round()
+            );
+        }
+        if let Some(b) = &t.baseline {
+            // Baseline work (9) and cost (10) over the baseline span: Project's earned value
+            // (BCWS/BCWP) reads them back on open.
+            let span = (cals.clock.at(b.start), cals.clock.at(b.finish));
+            timephased(&mut out, cals, 9, t.uid as usize, span, 1, &duration(b.work.round() as Wm));
+            timephased(&mut out, cals, 10, t.uid as usize, span, 1, &format!("{}", (b.cost * 100.0).round()));
+        }
         if p.actual_start.is_some() && !t.summary && t.duration > 0 {
             task_progress(&mut out, cals, i, t.uid as usize, t.duration, s, p.percent_complete);
         }

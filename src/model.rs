@@ -74,10 +74,22 @@ pub struct Task {
     /// Manually scheduled: the task sits at `manual_start` whatever its links say.
     pub manual: Option<NaiveDateTime>,
     pub fixed_cost: f64,
+    /// Baseline 0, when saved.
+    pub baseline: Option<Baseline>,
     /// When fixed cost accrues (MSPDI code: 1 start, 2 prorated, 3 end); kept for round trips.
     pub fixed_cost_accrual: u8,
     /// Leveling delay saved in the file (elapsed minutes): reopening keeps the leveled dates.
     pub leveling_delay: i64,
+}
+
+/// A task's saved plan (baseline 0): dates, duration (working minutes), work (minutes), cost.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Baseline {
+    pub start: NaiveDateTime,
+    pub finish: NaiveDateTime,
+    pub duration: Wm,
+    pub work: f64,
+    pub cost: f64,
 }
 
 /// Tracking data. An actual start pins the start (beating links and constraints); an actual

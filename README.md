@@ -44,6 +44,7 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 | `model` | Tasks, links, constraints, resources and assignments. |
 | `cpm` | Forward and backward passes, total and free slack, critical flag. It also accepts fixed placements produced by leveling. |
 | `cost` | Costs per assignment, task, summary and resource: regular and overtime rates, cost per use, rate changes over time (rate table A), material resources (quantity x unit rate) and fixed costs. |
+| `tracking` | Baselines (save and read baseline 0), start/finish/work variances and earned value at the status date (BCWS, BCWP, ACWP, CV, SV). |
 | `edit` | How Project recalculates duration, units and work when you add or remove a resource or change duration, units or work. It covers the fixed units, fixed duration and fixed work task types, with and without effort-driven scheduling. |
 | `leveling` | Serial list scheduling, resource by resource, of assignments (Project's default "level individual assignments") or whole tasks, with the ID, Standard and Priority/Standard orders, day/week/hour bases, splitting (also of a single uneven assignment), priority 1000, a leveling date range and "within available slack". Each assignment occupies its resource only while it works. |
 | `mspdi` | Reads MSPDI input and the results Project computed. |
@@ -52,8 +53,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 ## Covered
 
 The golden tests pass in full: the 87 leveling and CPM cases in `tests/golden.rs` and every step
-of the 10 edit series in `tests/edits.rs`. Costs match Project to the cent in all 165 golden files (`tests/costs.rs`). The round trip agrees
-on 138 of 139 files; the exception is listed in `tests/roundtrip.rs` (Project's own MSPDI import
+of the 10 edit series in `tests/edits.rs`. Costs, baseline variances and earned value match Project in every golden file
+(`tests/costs.rs`). The round trip agrees on 140 of 141 files; the exception is listed in `tests/roundtrip.rs` (Project's own MSPDI import
 adds overtime on top of work, even for its own export).
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish

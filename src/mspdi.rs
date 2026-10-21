@@ -9,7 +9,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use roxmltree::{Document, Node};
 
 use crate::calendar::{Calendar, Calendars, Exception, Shift};
-use crate::model::{Assignment, Constraint, Link, LinkType, Piece, Progress, Project, Rate, Resource, ResourceKind, Task, TaskType, Wm};
+use crate::model::{Assignment, Baseline, Constraint, Link, LinkType, Piece, Progress, Project, Rate, Resource, ResourceKind, Task, TaskType, Wm};
 
 pub const NS: &str = "http://schemas.microsoft.com/project";
 
@@ -51,6 +51,15 @@ pub struct TaskResult {
     pub work: Wm,
     /// Currency units.
     pub cost: f64,
+    /// Working minutes.
+    pub start_variance: Wm,
+    pub finish_variance: Wm,
+    /// Minutes.
+    pub work_variance: f64,
+    /// Currency units.
+    pub bcws: f64,
+    pub bcwp: f64,
+    pub acwp: f64,
 }
 
 /// One assignment as Project wrote it.
@@ -431,6 +440,18 @@ pub fn read_project(xml: &str) -> Result<Project> {
             },
             // Money is stored in cents.
             fixed_cost: text(*node, "FixedCost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
+            baseline: children(*node, "Baseline")
+                .find(|b| text(*b, "Number") == Some("0"))
+                .map(|b| -> Result<Baseline> {
+                    Ok(Baseline {
+                        start: parse_datetime(req(b, "Start")?)?,
+                        finish: parse_datetime(req(b, "Finish")?)?,
+                        duration: text(b, "Duration").map(parse_duration).transpose()?.unwrap_or(0),
+                        work: text(b, "Work").map(parse_duration).transpose()?.unwrap_or(0) as f64,
+                        cost: text(b, "Cost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
+                    })
+                })
+                .transpose()?,
             fixed_cost_accrual: text(*node, "FixedCostAccrual").and_then(|v| v.parse().ok()).unwrap_or(3),
             leveling_delay: text(*node, "LevelingDelay").map_or(Ok(0), |_| int(*node, "LevelingDelay"))? / 10,
             progress: Progress {
@@ -568,9 +589,19 @@ pub fn read_results(xml: &str) -> Result<Vec<TaskResult>> {
                 duration: parse_duration(req(t, "Duration")?)?,
                 work: parse_duration(req(t, "Work")?)?,
                 cost: text(t, "Cost").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 100.0,
+                start_variance: num(t, "StartVariance") as Wm / 10,
+                finish_variance: num(t, "FinishVariance") as Wm / 10,
+                work_variance: num(t, "WorkVariance") / 1000.0,
+                bcws: num(t, "BCWS") / 100.0,
+                bcwp: num(t, "BCWP") / 100.0,
+                acwp: num(t, "ACWP") / 100.0,
             })
         })
         .collect()
+}
+
+fn num(node: Node, tag: &str) -> f64 {
+    text(node, tag).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0)
 }
 
 #[cfg(test)]
