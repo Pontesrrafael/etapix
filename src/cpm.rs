@@ -87,17 +87,20 @@ impl Network {
             for link in &task.preds {
                 let into_summary = task.summary;
                 let from_summary = project.tasks[link.pred].summary;
-                let unsupported = (into_summary
-                    && matches!(link.kind, LinkType::FinishToFinish | LinkType::StartToFinish))
-                    || (from_summary && matches!(link.kind, LinkType::StartToStart | LinkType::StartToFinish));
-                if unsupported {
+                // Project itself refuses finish-to-finish and start-to-finish links into a summary.
+                if into_summary && matches!(link.kind, LinkType::FinishToFinish | LinkType::StartToFinish) {
                     return Err(ScheduleError::Unsupported(format!(
-                        "{:?} link involving a summary task ({})",
+                        "{:?} link into a summary task ({})",
                         link.kind, task.name
                     )));
                 }
+                // A start-based link out of a summary reads the summary's start (its earliest
+                // subtask start), so it keeps the summary as predecessor.
+                let keep_summary =
+                    from_summary && matches!(link.kind, LinkType::StartToStart | LinkType::StartToFinish);
+                let sources = if keep_summary { vec![link.pred] } else { expand(link.pred) };
                 for target in expand(i) {
-                    for source in expand(link.pred) {
+                    for &source in &sources {
                         preds[target].push(Link { pred: source, ..link.clone() });
                     }
                 }
@@ -111,13 +114,29 @@ impl Network {
             }
         }
 
-        let mut indegree: Vec<usize> = preds.iter().map(Vec::len).collect();
+        // Ordering edges: a link from a summary waits for all its subtasks.
+        let deps: Vec<Vec<usize>> = preds
+            .iter()
+            .map(|links| {
+                links
+                    .iter()
+                    .flat_map(|l| if project.tasks[l.pred].summary { leaves_of[l.pred].clone() } else { vec![l.pred] })
+                    .collect()
+            })
+            .collect();
+        let mut after = vec![Vec::new(); n];
+        for (t, ds) in deps.iter().enumerate() {
+            for &d in ds {
+                after[d].push(t);
+            }
+        }
+        let mut indegree: Vec<usize> = deps.iter().map(Vec::len).collect();
         let mut ready: Vec<usize> =
             (0..n).filter(|&i| !project.tasks[i].summary && indegree[i] == 0).rev().collect();
         let mut order = Vec::new();
         while let Some(i) = ready.pop() {
             order.push(i);
-            for &(s, _) in succs[i].iter().rev() {
+            for &s in after[i].iter().rev() {
                 indegree[s] -= 1;
                 if indegree[s] == 0 {
                     ready.push(s);
@@ -186,7 +205,12 @@ pub fn earliest_start(
     }
     let mut bound: Option<(At, At)> = None;
     for link in &net.preds[task] {
-        let (p_start, p_finish) = (starts[link.pred], finishes[link.pred]);
+        let (p_start, p_finish) = if project.tasks[link.pred].summary {
+            let leaves = &net.leaves_of[link.pred];
+            (leaves.iter().map(|&l| starts[l]).min().unwrap_or(0), leaves.iter().map(|&l| finishes[l]).max().unwrap_or(0))
+        } else {
+            (starts[link.pred], finishes[link.pred])
+        };
         let lag = |at| cals.lag(at, link.lag, link.lag_elapsed);
         let candidate = match link.kind {
             LinkType::FinishToStart => from_start(tl, lag(p_finish), t.duration),
@@ -198,7 +222,18 @@ pub fn earliest_start(
             bound = Some(candidate);
         }
     }
-    let base = bound.unwrap_or_else(|| from_start(tl, cals.project_start, t.duration));
+    let mut base = bound.unwrap_or_else(|| from_start(tl, cals.project_start, t.duration));
+    // A start-no-earlier-than on a summary binds every subtask.
+    let mut up = t.parent;
+    while let Some(sm) = up {
+        if let Constraint::StartNoEarlierThan(d) = project.tasks[sm].constraint {
+            let c = from_start(tl, cals.clock.at(d), t.duration);
+            if c.0 > base.0 {
+                base = c;
+            }
+        }
+        up = project.tasks[sm].parent;
+    }
     let at = |d| cals.clock.at(d);
     let later = |a: (At, At), b: (At, At)| if b.0 > a.0 { b } else { a };
     let earlier = |a: (At, At), b: (At, At)| if b.0 < a.0 { b } else { a };
@@ -238,6 +273,27 @@ pub fn schedule(
     cals: &Calendars,
     placements: Option<&[Option<Placement>]>,
 ) -> Result<Vec<TaskSchedule>, ScheduleError> {
+    let first = schedule_pass(project, cals, placements)?;
+    let alap_with_succs = |i: usize| {
+        let t = &project.tasks[i];
+        t.constraint == Constraint::AsLateAsPossible && !t.summary && project.tasks.iter().any(|u| u.preds.iter().any(|l| l.pred == i))
+    };
+    if placements.is_some() || !(0..project.tasks.len()).any(alap_with_succs) {
+        return Ok(first);
+    }
+    // As-late-as-possible tasks with successors: pin them at their late dates and schedule
+    // again, so successors follow the late dates (observed).
+    let pinned: Vec<Option<Placement>> = (0..project.tasks.len())
+        .map(|i| alap_with_succs(i).then(|| Placement { segments: vec![(first[i].late_start, first[i].late_finish)] }))
+        .collect();
+    schedule_pass(project, cals, Some(&pinned))
+}
+
+fn schedule_pass(
+    project: &Project,
+    cals: &Calendars,
+    placements: Option<&[Option<Placement>]>,
+) -> Result<Vec<TaskSchedule>, ScheduleError> {
     let net = Network::build(project)?;
     let n = project.tasks.len();
     let mut early = vec![0; n];
@@ -247,12 +303,6 @@ pub fn schedule(
     let mut finishes = vec![0; n];
 
     for &i in &net.order {
-        if project.tasks[i].constraint == Constraint::AsLateAsPossible && !net.succs[i].is_empty() {
-            return Err(ScheduleError::Unsupported(format!(
-                "as-late-as-possible task with successors ({})",
-                project.tasks[i].name
-            )));
-        }
         let es = earliest_start(project, cals, &net, i, &starts, &finishes);
         early[i] = es.start;
         link_bound[i] = es.link_bound;
@@ -274,7 +324,13 @@ pub fn schedule(
     // successor's own leveling delay stays with it: predecessors see it as if undelayed.
     let project_finish = net.order.iter().map(|&i| finishes[i]).max().unwrap_or(0);
     let span: Vec<Wm> = (0..n).map(|i| cals.task(i).w(finishes[i]) - cals.task(i).w(starts[i])).collect();
-    let delay: Vec<Wm> = (0..n).map(|i| cals.task(i).w(starts[i]) - cals.task(i).w(early[i])).collect();
+    // A task pinned at its late dates (as late as possible) is not delayed by leveling.
+    let delay: Vec<Wm> = (0..n)
+        .map(|i| match project.tasks[i].constraint {
+            Constraint::AsLateAsPossible => 0,
+            _ => cals.task(i).w(starts[i]) - cals.task(i).w(early[i]),
+        })
+        .collect();
     // Late dates of a successor as its predecessors see them (without its leveling delay).
     let undelayed = |s: usize, late_start: At, late_finish: At| {
         let tl = cals.task(s);

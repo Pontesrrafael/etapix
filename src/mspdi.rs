@@ -278,8 +278,8 @@ pub fn read_project(xml: &str) -> Result<Project> {
     let mut open: Vec<(i64, usize)> = Vec::new();
     for (i, node) in task_nodes.iter().enumerate() {
         let summary = text(*node, "Summary") == Some("1");
-        if summary && int(*node, "ConstraintType")? != 0 {
-            return err("constraints on summary tasks are not supported yet");
+        if summary && !matches!(int(*node, "ConstraintType")?, 0 | 4) {
+            return err("constraints other than start-no-earlier-than on summary tasks are not supported yet");
         }
         let level = int(*node, "OutlineLevel")?;
         while open.last().is_some_and(|&(l, _)| l >= level) {

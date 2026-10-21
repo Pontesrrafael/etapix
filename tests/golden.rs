@@ -186,6 +186,13 @@ fn milestones_recurring_exceptions_and_resource_calendars() {
     assert_cases(&cases);
 }
 
+#[test]
+fn alap_successors_and_summary_rules() {
+    let cases = ["B10-A1-ALAP-com-sucessora", "B10-A2-ALAP-cadeia", "B10-S1-resumo-SNET", "B10-L2-SS-do-resumo"];
+    let cases: Vec<_> = cases.iter().map(|c| ("b10", *c, None)).collect();
+    assert_cases(&cases);
+}
+
 /// "Level individual assignments" on and off gave identical results in these cases.
 #[test]
 fn leveling_multiple_resources() {

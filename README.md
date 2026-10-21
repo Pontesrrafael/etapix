@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 66 leveling and CPM cases in `tests/golden.rs` and every step
-of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 105 files.
+The golden tests pass in full: the 70 leveling and CPM cases in `tests/golden.rs` and every step
+of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 109 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -59,6 +59,9 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 105 files
   actual start as late start and measures slack at the finish. Progress on tasks with resources
   (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
+- As-late-as-possible tasks with successors: they move to their late dates and successors
+  follow them. A start-no-earlier-than on a summary binds its subtasks; a start-to-start link
+  out of a summary reads the summary's (earliest subtask) start.
 - Milestones (zero duration). They sit at the exact instant their links ask for (a
   predecessor's 18:00 finish, the project's 08:00 start), with exact late dates.
 - Weekly recurring calendar exceptions and multi-day exceptions. Resources on different
@@ -96,10 +99,8 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 105 files
 
 ## Not covered yet (needs new golden experiments)
 
-- Constraints placed on summary tasks; finish-to-finish or start-to-finish links into a summary;
-  start-to-start or start-to-finish links out of one. The reader rejects these with an explicit
-  error.
-- As Late As Possible tasks that have successors. These are rejected too.
+- Summary constraints other than start-no-earlier-than (rejected). Finish-to-finish and
+  start-to-finish links into a summary are rejected, as Project itself refuses them.
 - Effort-driven removal on fixed-duration tasks, and reducing work on fixed-work tasks. The code
   follows the nearest observed rule, but no experiment confirms it.
 - Reading timephased data from MSPDI. Profiles read from XML are flattened to a single rate.
