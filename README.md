@@ -50,12 +50,14 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 53 leveling and CPM cases in `tests/golden.rs` and every step
-of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 92 files.
+The golden tests pass in full: the 57 leveling and CPM cases in `tests/golden.rs` and every step
+of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 96 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
-  are never critical, and their late dates equal their actual dates.
+  are never critical, and their late dates equal their actual dates. A started task shows its
+  actual start as late start and measures slack at the finish. Progress on tasks with resources
+  (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
 - Absolute time. Tasks on different calendars meet at real instants: a half-day predecessor
   that finishes at 10:00 lets a standard-calendar successor start at 10:00.
@@ -107,8 +109,7 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 92 files.
   overnight gaps on unusual calendars could overlap.
 - Leveling period bases other than day by day.
 - "Level individual assignments" and partial date ranges.
-- Status date as a field of the model, and progress on tasks that have assignments (actual work
-  per assignment).
+- Status date as a field of the model.
 - "Honor constraints" turned off.
 - Multiple critical paths and the "critical if slack is at most N" setting.
 - Writing MSPDI.

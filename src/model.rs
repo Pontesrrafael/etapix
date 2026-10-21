@@ -71,6 +71,8 @@ pub struct Task {
     pub calendar: Option<usize>,
     pub ignore_resource_calendar: bool,
     pub progress: Progress,
+    /// Leveling delay saved in the file (elapsed minutes): reopening keeps the leveled dates.
+    pub leveling_delay: i64,
 }
 
 /// Tracking data. An actual start pins the start (beating links and constraints); an actual

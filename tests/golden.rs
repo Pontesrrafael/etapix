@@ -149,6 +149,18 @@ fn progress_and_actuals() {
     assert_cases(&cases);
 }
 
+#[test]
+fn progress_with_resources() {
+    let cases = [
+        "B7-R1-dois-recursos-um-trabalhou",
+        "B7-R2-inicio-real-atrasado-50pct",
+        "B7-R3-reagendar-com-recurso",
+        "B7-R4-nivelar-com-andamento",
+    ];
+    let cases: Vec<_> = cases.iter().map(|c| ("b7", *c, None)).collect();
+    assert_cases(&cases);
+}
+
 /// "Level individual assignments" on and off gave identical results in these cases.
 #[test]
 fn leveling_multiple_resources() {

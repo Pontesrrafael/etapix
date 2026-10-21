@@ -149,6 +149,30 @@ fn task_progress(out: &mut String, cals: &Calendars, i: usize, uid: usize, dur: 
     }
 }
 
+/// Stop/Resume and per-day actual (type 2) and remaining (type 1) work of a task in progress,
+/// for one of its assignments working at `rate`.
+fn progress_work(cals: &Calendars, uid: usize, i: usize, dur: Wm, s: &TaskSchedule, pct: u32, rate: f64) -> (String, String) {
+    let at = |x| dt(cals.clock.dt(x));
+    let split = s.segments.len() > 1;
+    let dates = if split {
+        format!("<Stop>{}</Stop><Resume>{}</Resume>", at(s.segments[0].1), at(s.segments[1].0))
+    } else {
+        String::new()
+    };
+    let mut tp = String::new();
+    if let Some(stop) = stop(cals, i, dur, s, pct) {
+        let work = |m: Wm| duration((m as f64 * rate).round() as Wm);
+        for (a, b, m) in days(cals, i, s.start, stop) {
+            timephased(&mut tp, cals, 2, uid, (a, b), 1, &work(m));
+        }
+        let rest = if split { s.segments[1].0 } else { stop };
+        for (a, b, m) in days(cals, i, rest, s.finish) {
+            timephased(&mut tp, cals, 1, uid, (a, b), 1, &work(m));
+        }
+    }
+    (dates, tp)
+}
+
 /// The unassigned placeholder assignment (resource -65535) Project keeps for a task without
 /// resources. It carries the actual and remaining work per day; without it Project re-spreads a
 /// rescheduled split and finishes a day late (found by bisecting the round trip).
@@ -156,28 +180,17 @@ fn task_progress(out: &mut String, cals: &Calendars, i: usize, uid: usize, dur: 
 fn placeholder_assignment(out: &mut String, cals: &Calendars, uid: usize, i: usize, task_uid: i64, dur: Wm, s: &TaskSchedule, pct: u32) {
     let at = |x| dt(cals.clock.dt(x));
     let done = dur * pct as Wm / 100;
-    let split = s.segments.len() > 1;
+    let (dates, tp) = progress_work(cals, uid, i, dur, s, pct, 1.0);
     let _ = write!(
         out,
-        "<Assignment><UID>{uid}</UID><TaskUID>{task_uid}</TaskUID><ResourceUID>-65535</ResourceUID>         <PercentWorkComplete>{pct}</PercentWorkComplete><ActualStart>{}</ActualStart>         <ActualWork>{}</ActualWork><Finish>{}</Finish><RemainingWork>{}</RemainingWork>         <Start>{}</Start>{}<Units>1</Units><Work>{}</Work>",
+        "<Assignment><UID>{uid}</UID><TaskUID>{task_uid}</TaskUID><ResourceUID>-65535</ResourceUID>         <PercentWorkComplete>{pct}</PercentWorkComplete><ActualStart>{}</ActualStart>         <ActualWork>{}</ActualWork><Finish>{}</Finish><RemainingWork>{}</RemainingWork>         <Start>{}</Start>{dates}<Units>1</Units><Work>{}</Work>{tp}</Assignment>",
         at(s.start),
         duration(done),
         at(s.finish),
         duration(dur - done),
         at(s.start),
-        if split { format!("<Stop>{}</Stop><Resume>{}</Resume>", at(s.segments[0].1), at(s.segments[1].0)) } else { String::new() },
         duration(dur),
     );
-    if let Some(stop) = stop(cals, i, dur, s, pct) {
-        for (a, b, m) in days(cals, i, s.start, stop) {
-            timephased(out, cals, 2, uid, (a, b), 1, &duration(m));
-        }
-        let rest = if split { s.segments[1].0 } else { stop };
-        for (a, b, m) in days(cals, i, rest, s.finish) {
-            timephased(out, cals, 1, uid, (a, b), 1, &duration(m));
-        }
-    }
-    out.push_str("</Assignment>");
 }
 
 /// Serializes `project` with the dates in `schedule` (from [`crate::cpm::schedule`] or
@@ -246,7 +259,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
              {}{}<EffortDriven>{}</EffortDriven><Summary>{}</Summary>\
              <PercentComplete>{}</PercentComplete>{}{}{}\
              <ConstraintType>{ctype}</ConstraintType><CalendarUID>{}</CalendarUID>{}{}\
-             <LevelingCanSplit>{}</LevelingCanSplit><IgnoreResourceCalendar>{}</IgnoreResourceCalendar>",
+             <LevelingCanSplit>{}</LevelingCanSplit><LevelingDelay>{}</LevelingDelay><LevelingDelayFormat>8</LevelingDelayFormat><IgnoreResourceCalendar>{}</IgnoreResourceCalendar>",
             t.uid,
             t.id,
             esc(&t.name),
@@ -281,6 +294,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             opt("ConstraintDate", cdate),
             opt("Deadline", t.deadline),
             u8::from(t.leveling_can_split),
+            s.leveling_delay * 10,
             u8::from(t.ignore_resource_calendar),
         );
         for link in &t.preds {
@@ -321,18 +335,38 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         // Dates let Project keep an assignment stretched past work / units (fixed work).
         let tl = cals.task(a.task);
         let first = tl.w(schedule[a.task].start) + a.offset;
-        let work = duration(a.work().round() as Wm);
+        let total = a.work().round() as Wm;
+        // Progress on a resourced task lives on its assignments: without the actual start and
+        // actual work there, Project reopens the task as not started.
+        let p = &project.tasks[a.task].progress;
+        let actual = total * p.percent_complete as Wm / 100;
+        let (dates, tp) = if p.actual_start.is_some() {
+            let t = &project.tasks[a.task];
+            progress_work(cals, k + 1, a.task, t.duration, &schedule[a.task], p.percent_complete, a.units)
+        } else {
+            (String::new(), String::new())
+        };
+        let started = if p.actual_start.is_some() {
+            format!(
+                "<PercentWorkComplete>{}</PercentWorkComplete><ActualStart>{}</ActualStart><ActualWork>{}</ActualWork>",
+                p.percent_complete,
+                at(schedule[a.task].start),
+                duration(actual)
+            )
+        } else {
+            String::new()
+        };
         let _ = write!(
             out,
-            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>\
-             <Finish>{}</Finish><RemainingWork>{work}</RemainingWork><Start>{}</Start>\
-             <Units>{}</Units><Work>{work}</Work></Assignment>",
+            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>{started}             <Finish>{}</Finish><RemainingWork>{}</RemainingWork><Start>{}</Start>{dates}             <Units>{}</Units><Work>{}</Work>{tp}</Assignment>",
             k + 1,
             project.tasks[a.task].uid,
             project.resources[a.resource].uid,
             at(tl.finish_at(first + a.span())),
+            duration(total - actual),
             at(tl.start_at(first)),
             a.units,
+            duration(total),
         );
     }
     let mut uid = project.assignments.len();

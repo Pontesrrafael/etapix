@@ -246,6 +246,12 @@ pub fn schedule(
         link_bound[i] = es.link_bound;
         segments[i] = match placements.and_then(|p| p[i].as_ref()) {
             Some(p) => p.segments.clone(),
+            None if project.tasks[i].leveling_delay > 0 && project.tasks[i].progress.actual_start.is_none() => {
+                // A saved leveling delay (elapsed) keeps the leveled start when the file is reopened.
+                let tl = cals.task(i);
+                let start = tl.snap_start(es.start + project.tasks[i].leveling_delay);
+                vec![(start, tl.finish_after(start, project.tasks[i].duration))]
+            }
             None => progress_segments(project, cals, i, es),
         };
         starts[i] = segments[i][0].0;
@@ -313,7 +319,17 @@ pub fn schedule(
     let mut out: Vec<Option<TaskSchedule>> = vec![None; n];
     for &i in &net.order {
         let tl = cals.task(i);
-        let total_slack = tl.w(late_start[i]) - tl.w(link_bound[i].max(starts[i]));
+        let started = project.tasks[i].progress.actual_start.is_some();
+        // A started task cannot start later: its late start shows the actual start and its
+        // slack is measured at the finish.
+        let total_slack = if started {
+            tl.w(late_finish[i]) - tl.w(finishes[i])
+        } else {
+            tl.w(late_start[i]) - tl.w(link_bound[i].max(starts[i]))
+        };
+        if started {
+            late_start[i] = starts[i];
+        }
         let mut free_slack = total_slack;
         for &(s, k) in &net.succs[i] {
             let link = &net.preds[s][k];

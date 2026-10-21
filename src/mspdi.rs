@@ -315,6 +315,7 @@ pub fn read_project(xml: &str) -> Result<Project> {
             parent,
             calendar: calendar_of(text(*node, "CalendarUID").map_or(Ok(-1), |_| int(*node, "CalendarUID"))?)?,
             ignore_resource_calendar: text(*node, "IgnoreResourceCalendar") == Some("1"),
+            leveling_delay: text(*node, "LevelingDelay").map_or(Ok(0), |_| int(*node, "LevelingDelay"))? / 10,
             progress: Progress {
                 percent_complete: text(*node, "PercentComplete").map_or(Ok(0), |_| int(*node, "PercentComplete"))? as u32,
                 actual_start: text(*node, "ActualStart").map(parse_datetime).transpose()?,
