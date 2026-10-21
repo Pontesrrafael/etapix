@@ -1,0 +1,13 @@
+[package]
+name = "pjapp-setup"
+version = "0.1.0"
+edition = "2021"
+description = "Per-user installer for pjapp: no admin rights, no changes to Microsoft Project"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "pjapp-setup"
+path = "src/main.rs"
+
+[dependencies]
+rfd = "0.15"

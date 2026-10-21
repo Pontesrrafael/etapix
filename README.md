@@ -36,6 +36,36 @@ powershell -File tools\roundtrip.ps1 -InDir C:\dev\pjsched\target\roundtrip\in -
 The project pins the `stable-x86_64-pc-windows-gnu` toolchain in `rust-toolchain.toml`, because
 that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
+## Desktop app (`app/`) and installer (`setup/`)
+
+`pjapp` is a desktop planner for internal use, built with egui on top of the engine. It works
+alongside an installed Microsoft Project: it opens and saves Project XML (MSPDI) and leaves
+`.mpp`/`.xml` associations alone.
+
+- Open, save and save as Project XML; new project.
+- Task table: name, duration in days, predecessors (IDs, as in Project), resources, percent
+  complete, start, finish and cost. Double-click a cell to edit it; edits reschedule at once and
+  an edit that cannot be scheduled (a dependency cycle, for example) is undone with a message.
+- Gantt next to the table: critical tasks in red, summaries, milestones, splits, progress,
+  baseline bar, weekends shaded, zoom.
+- Level resources (Project's defaults, kept as saved leveling delays), clear leveling, save
+  baseline.
+
+`pjapp-setup` is a per-user installer with the app built in: it installs to
+`%LOCALAPPDATA%\Programs\pjapp` without admin rights, adds a Start Menu shortcut and an entry in
+Windows' installed apps; uninstalling removes all three. `/silent` skips every dialog (for IT
+deployment): `pjapp-setup-0.1.0.exe /silent`, and `desinstalar.exe /uninstall /silent`.
+
+Build both with:
+
+```bash
+powershell -ExecutionPolicy Bypass -File toolsuild-installer.ps1
+```
+
+The script writes `dist\pjapp-setup-<version>.exe`. The UI crates need an assembler for
+`dlltool`: the script puts the portable WinLibs binutils in `%USERPROFILE%\tools\mingw64` on
+`PATH` (the GNU toolchain ships `dlltool` but not `as`).
+
 ## Layout
 
 | Module | Responsibility |

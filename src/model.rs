@@ -197,3 +197,51 @@ pub struct Project {
     pub resources: Vec<Resource>,
     pub assignments: Vec<Assignment>,
 }
+
+impl Task {
+    /// An auto-scheduled, fixed-units task with Project's defaults (priority 500, ASAP, may split).
+    pub fn new(uid: i64, id: i64, name: &str, duration: Wm) -> Self {
+        Task {
+            uid,
+            id,
+            name: name.to_string(),
+            duration,
+            elapsed: false,
+            task_type: TaskType::FixedUnits,
+            effort_driven: false,
+            priority: 500,
+            constraint: Constraint::AsSoonAsPossible,
+            deadline: None,
+            leveling_can_split: true,
+            preds: Vec::new(),
+            summary: false,
+            parent: None,
+            calendar: None,
+            ignore_resource_calendar: false,
+            progress: Progress::default(),
+            manual: None,
+            fixed_cost: 0.0,
+            baseline: None,
+            fixed_cost_accrual: 3,
+            leveling_delay: 0,
+        }
+    }
+}
+
+impl Project {
+    /// An empty project on the standard calendar, starting at `start`, with Project's defaults.
+    pub fn new(start: NaiveDateTime) -> Self {
+        Project {
+            start,
+            critical_slack_limit: 0,
+            multiple_critical_paths: false,
+            honor_constraints: true,
+            status_date: None,
+            calendars: vec![Calendar::standard()],
+            calendar: 0,
+            tasks: Vec::new(),
+            resources: Vec::new(),
+            assignments: Vec::new(),
+        }
+    }
+}
