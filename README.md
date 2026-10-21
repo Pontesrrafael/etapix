@@ -59,7 +59,7 @@ deployment): `pjapp-setup-0.1.0.exe /silent`, and `desinstalar.exe /uninstall /s
 Build both with:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File toolsuild-installer.ps1
+powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
 ```
 
 The script writes `dist\pjapp-setup-<version>.exe`. The UI crates need an assembler for
