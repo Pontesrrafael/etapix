@@ -161,6 +161,18 @@ fn progress_with_resources() {
     assert_cases(&cases);
 }
 
+#[test]
+fn manually_scheduled_tasks() {
+    let cases = [
+        "B8-M1-manual-antes-do-predecessor",
+        "B8-M2-manual-depois",
+        "B8-M3-manual-sem-vinculos",
+        "B8-M4-manual-viola-vinculo",
+    ];
+    let cases: Vec<_> = cases.iter().map(|c| ("b8", *c, None)).collect();
+    assert_cases(&cases);
+}
+
 /// "Level individual assignments" on and off gave identical results in these cases.
 #[test]
 fn leveling_multiple_resources() {

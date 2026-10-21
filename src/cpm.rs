@@ -164,6 +164,11 @@ pub fn earliest_start(
 ) -> EarlyStart {
     let t = &project.tasks[task];
     let tl = cals.task(task);
+    if let (Some(manual), None) = (t.manual, t.progress.actual_start) {
+        // Manually scheduled: links and constraints do not move it.
+        let (start, finish) = from_start(tl, cals.clock.at(manual), t.duration);
+        return EarlyStart { start, finish, link_bound: start };
+    }
     if let Some(actual) = t.progress.actual_start {
         let start = cals.clock.at(actual);
         let finish = match t.progress.actual_finish {
@@ -304,6 +309,23 @@ pub fn schedule(
         }
         late_finish[i] = tl.finish_at(lf);
         late_start[i] = tl.start_at(lf - span[i]);
+        if task.manual.is_some() {
+            // A manual task's late finish is the exact instant its successors ask for.
+            let raw = net.succs[i]
+                .iter()
+                .filter_map(|&(s, k)| {
+                    let link = &net.preds[s][k];
+                    let (s_ls, s_lf) = undelayed(s, late_start[s], late_finish[s]);
+                    let back = |at| cals.lag(at, -link.lag, link.lag_elapsed);
+                    match link.kind {
+                        LinkType::FinishToStart => Some(back(s_ls)),
+                        LinkType::FinishToFinish => Some(back(s_lf)),
+                        _ => None,
+                    }
+                })
+                .min();
+            late_finish[i] = raw.unwrap_or(late_finish[i]);
+        }
         if task.progress.percent_complete >= 100 {
             // Completed work has no float: its late dates are its actual dates.
             late_start[i] = starts[i];
@@ -319,7 +341,7 @@ pub fn schedule(
     let mut out: Vec<Option<TaskSchedule>> = vec![None; n];
     for &i in &net.order {
         let tl = cals.task(i);
-        let started = project.tasks[i].progress.actual_start.is_some();
+        let started = project.tasks[i].progress.actual_start.is_some() || project.tasks[i].manual.is_some();
         // A started task cannot start later: its late start shows the actual start and its
         // slack is measured at the finish.
         let total_slack = if started {

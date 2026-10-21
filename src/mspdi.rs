@@ -255,9 +255,6 @@ pub fn read_project(xml: &str) -> Result<Project> {
     // Open ancestors by outline level, to find each task's parent.
     let mut open: Vec<(i64, usize)> = Vec::new();
     for (i, node) in task_nodes.iter().enumerate() {
-        if text(*node, "Manual") == Some("1") {
-            return err("manually scheduled tasks are not supported yet");
-        }
         let summary = text(*node, "Summary") == Some("1");
         if summary && int(*node, "ConstraintType")? != 0 {
             return err("constraints on summary tasks are not supported yet");
@@ -315,6 +312,11 @@ pub fn read_project(xml: &str) -> Result<Project> {
             parent,
             calendar: calendar_of(text(*node, "CalendarUID").map_or(Ok(-1), |_| int(*node, "CalendarUID"))?)?,
             ignore_resource_calendar: text(*node, "IgnoreResourceCalendar") == Some("1"),
+            manual: if text(*node, "Manual") == Some("1") {
+                Some(parse_datetime(text(*node, "ManualStart").or(text(*node, "Start")).unwrap_or_default())?)
+            } else {
+                None
+            },
             leveling_delay: text(*node, "LevelingDelay").map_or(Ok(0), |_| int(*node, "LevelingDelay"))? / 10,
             progress: Progress {
                 percent_complete: text(*node, "PercentComplete").map_or(Ok(0), |_| int(*node, "PercentComplete"))? as u32,

@@ -253,9 +253,9 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         // (and everything after them, such as links).
         let _ = write!(
             out,
-            "<Task><UID>{}</UID><ID>{}</ID><Name>{}</Name><Manual>0</Manual><Type>{task_type}</Type>\
+            "<Task><UID>{}</UID><ID>{}</ID><Name>{}</Name><Manual>{}</Manual><Type>{task_type}</Type>\
              <OutlineLevel>{level}</OutlineLevel><Priority>{}</Priority>\
-             <Start>{}</Start><Finish>{}</Finish><Duration>{}</Duration><DurationFormat>{}</DurationFormat>\
+             <Start>{}</Start><Finish>{}</Finish><Duration>{}</Duration>{}<DurationFormat>{}</DurationFormat>\
              {}{}<EffortDriven>{}</EffortDriven><Summary>{}</Summary>\
              <PercentComplete>{}</PercentComplete>{}{}{}\
              <ConstraintType>{ctype}</ConstraintType><CalendarUID>{}</CalendarUID>{}{}\
@@ -263,10 +263,17 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             t.uid,
             t.id,
             esc(&t.name),
+            u8::from(t.manual.is_some()),
             t.priority,
             at(s.start),
             at(s.finish),
             duration(t.duration),
+            t.manual.map_or(String::new(), |_| format!(
+                "<ManualStart>{}</ManualStart><ManualFinish>{}</ManualFinish><ManualDuration>{}</ManualDuration>",
+                at(s.start),
+                at(s.finish),
+                duration(t.duration)
+            )),
             if t.elapsed { 8 } else { 7 },
             // A split from rescheduled progress needs Stop next to Resume.
             if s.segments.len() > 1 { format!("<Stop>{}</Stop>", at(s.segments[0].1)) } else { String::new() },

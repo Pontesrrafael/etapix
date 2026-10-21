@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 57 leveling and CPM cases in `tests/golden.rs` and every step
-of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 96 files.
+The golden tests pass in full: the 61 leveling and CPM cases in `tests/golden.rs` and every step
+of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 100 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -59,6 +59,8 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 96 files.
   actual start as late start and measures slack at the finish. Progress on tasks with resources
   (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
+- Manually scheduled tasks. They stay at their manual start whatever their links say; a link
+  they violate shows as negative slack on the predecessor, as with a constraint conflict.
 - Absolute time. Tasks on different calendars meet at real instants: a half-day predecessor
   that finishes at 10:00 lets a standard-calendar successor start at 10:00.
 - Task calendars, resource calendars and their intersection, "ignore resource calendar",
@@ -90,7 +92,6 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 96 files.
 
 ## Not covered yet (needs new golden experiments)
 
-- Manually scheduled tasks.
 - Constraints placed on summary tasks; finish-to-finish or start-to-finish links into a summary;
   start-to-start or start-to-finish links out of one. The reader rejects these with an explicit
   error.

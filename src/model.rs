@@ -71,6 +71,8 @@ pub struct Task {
     pub calendar: Option<usize>,
     pub ignore_resource_calendar: bool,
     pub progress: Progress,
+    /// Manually scheduled: the task sits at `manual_start` whatever its links say.
+    pub manual: Option<NaiveDateTime>,
     /// Leveling delay saved in the file (elapsed minutes): reopening keeps the leveled dates.
     pub leveling_delay: i64,
 }
