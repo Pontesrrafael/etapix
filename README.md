@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 75 leveling and CPM cases in `tests/golden.rs` and every step
-of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 114 files.
+The golden tests pass in full: the 77 leveling and CPM cases in `tests/golden.rs` and every step
+of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 121 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -59,6 +59,9 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 114 files
   actual start as late start and measures slack at the finish. Progress on tasks with resources
   (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
+- "Honor constraints" off (links win in the forward pass; late dates still follow constraints).
+  Working-time lags count on the project calendar both ways, between tasks on any calendars.
+  Less work on an assignment resets it to its nominal units.
 - Leveling period basis. Day (Project's default) and week compare each period's booked work
   with its capacity, so two half-day tasks may share a day; hour and minute need spare units at
   every moment. Critical slack limit and multiple critical paths (each chain end closes its own
@@ -105,18 +108,12 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 114 files
 
 - Summary constraints other than start-no-earlier-than (rejected). Finish-to-finish and
   start-to-finish links into a summary are rejected, as Project itself refuses them.
-- Effort-driven removal on fixed-duration tasks, and reducing work on fixed-work tasks. The code
-  follows the nearest observed rule, but no experiment confirms it.
 - Reading timephased data from MSPDI. Profiles read from XML are flattened to a single rate.
 - Splitting during leveling for tasks whose assignments do not cover the whole task evenly.
 - Any case where the "level individual assignments" setting changes the result. It made no
   difference in batch 3.
 - Monthly and yearly recurring calendar exceptions (rejected).
-- Working-time lags between tasks on different calendars. They count on the project calendar,
-  which no experiment has pinned down yet.
 - Leveling across different calendars. Bookings are compared as absolute stretches, so
   overnight gaps on unusual calendars could overlap.
 - "Level individual assignments" and partial date ranges.
 - Status date as a field of the model.
-- "Honor constraints" turned off.
-- Writing MSPDI.

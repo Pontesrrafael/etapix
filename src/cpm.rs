@@ -241,6 +241,10 @@ pub fn earliest_start(
         Constraint::AsSoonAsPossible | Constraint::AsLateAsPossible => base,
         Constraint::StartNoEarlierThan(d) => later(base, from_start(tl, at(*d), t.duration)),
         Constraint::FinishNoEarlierThan(d) => later(base, from_finish(tl, at(*d), t.duration)),
+        // With "honor constraints" off, links win: a constraint may only push a task later.
+        Constraint::StartNoLaterThan(_) | Constraint::FinishNoLaterThan(_) if !project.honor_constraints => base,
+        Constraint::MustStartOn(d) if !project.honor_constraints => later(base, from_start(tl, at(*d), t.duration)),
+        Constraint::MustFinishOn(d) if !project.honor_constraints => later(base, from_finish(tl, at(*d), t.duration)),
         Constraint::StartNoLaterThan(d) => earlier(base, from_start(tl, at(*d), t.duration)),
         Constraint::FinishNoLaterThan(d) => earlier(base, from_finish(tl, at(*d), t.duration)),
         Constraint::MustStartOn(d) => from_start(tl, at(*d), t.duration),
@@ -346,7 +350,7 @@ fn schedule_pass(
         for &(s, k) in &net.succs[i] {
             let link = &net.preds[s][k];
             let (s_ls, s_lf) = undelayed(s, late_start[s], late_finish[s]);
-            let back = |at| cals.lag(at, -link.lag, link.lag_elapsed);
+            let back = |at| cals.lag_back(at, link.lag, link.lag_elapsed);
             let bound = match link.kind {
                 LinkType::FinishToStart => w(back(s_ls)),
                 LinkType::StartToStart => w(back(s_ls)) + span[i],
@@ -381,7 +385,7 @@ fn schedule_pass(
                 .filter_map(|&(s, k)| {
                     let link = &net.preds[s][k];
                     let (s_ls, s_lf) = undelayed(s, late_start[s], late_finish[s]);
-                    let back = |at| cals.lag(at, -link.lag, link.lag_elapsed);
+                    let back = |at| cals.lag_back(at, link.lag, link.lag_elapsed);
                     match link.kind {
                         LinkType::FinishToStart => Some(back(s_ls)),
                         LinkType::FinishToFinish => Some(back(s_lf)),
@@ -424,7 +428,7 @@ fn schedule_pass(
         for &(s, k) in &net.succs[i] {
             let link = &net.preds[s][k];
             let (s_start, s_finish) = undelayed(s, starts[s], finishes[s]);
-            let back = |at| cals.lag(at, -link.lag, link.lag_elapsed);
+            let back = |at| cals.lag_back(at, link.lag, link.lag_elapsed);
             let gap = match link.kind {
                 LinkType::FinishToStart => tl.w(back(s_start)) - tl.w(finishes[i]),
                 LinkType::StartToStart => tl.w(back(s_start)) - tl.w(starts[i]),

@@ -222,6 +222,11 @@ fn critical_path_options() {
     assert_cases(&[("b11", "B11-K1-limite-folga-2d", None), ("b11", "B11-K2-multiplos-caminhos", None)]);
 }
 
+#[test]
+fn honor_constraints_off_and_cross_calendar_lag() {
+    assert_cases(&[("b12", "B12-H1-restricoes-desligadas", None), ("b12", "B12-L1-lag-entre-calendarios", None)]);
+}
+
 /// Batch 11 saved Project's leveling in the file. Clearing those delays and leveling with the
 /// same period basis must give back Project's dates; the saved file must also schedule as is.
 #[test]

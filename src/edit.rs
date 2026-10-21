@@ -9,7 +9,7 @@
 //! | add/remove resource, effort-driven | total work kept, D = W / Σu, w ∝ u | total work kept, D kept, w ∝ u; the new assignment's units become w/D | as fixed units |
 //! | set duration | w = D·u | w = D·u | w kept, rate = w/D |
 //! | set units | w kept, span = w/u | span kept, w = D·u | w kept, span = w/u |
-//! | set work | extra work appended at u (or trimmed from the end) | rate scaled, span kept | as fixed units |
+//! | set work | extra work appended at u; less work resets to w/u at u | rate scaled, span kept | as fixed units |
 //!
 //! Task work changes are spread over the assignments in proportion to their current work.
 //! Fixed-units and fixed-work tasks then last as long as their longest assignment.
@@ -143,6 +143,9 @@ pub fn set_task_work(p: &mut Project, task: usize, work: f64) {
 
 fn adjust_work(a: &mut Assignment, work: f64, task_type: TaskType) {
     let current = a.work();
+    if (work - current).abs() < 0.5 {
+        return; // same work: nothing to recalculate
+    }
     if task_type == TaskType::FixedDuration {
         let scale = if current > 0.0 { work / current } else { 0.0 };
         a.profile.iter_mut().for_each(|piece| piece.rate *= scale);
@@ -150,17 +153,8 @@ fn adjust_work(a: &mut Assignment, work: f64, task_type: TaskType) {
         let len = ((work - current) / a.units).round() as Wm;
         a.profile.push(Piece { len, rate: a.units });
     } else {
-        // Trim from the end until the remaining pieces hold `work`.
-        let mut left = work;
-        let mut kept = Vec::new();
-        for piece in &a.profile {
-            if left <= 0.0 {
-                break;
-            }
-            let len = piece.len.min((left / piece.rate).round() as Wm);
-            kept.push(Piece { len, rate: piece.rate });
-            left -= len as f64 * piece.rate;
-        }
-        a.profile = kept;
+        // Less work resets the assignment to its nominal units (batch 12: a stretched fixed-work
+        // assignment cut from 16h to 8h ran 8h at 100%, not 24h at a third).
+        a.profile = vec![Piece { len: (work / a.units).round() as Wm, rate: a.units }];
     }
 }

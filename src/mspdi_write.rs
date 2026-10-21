@@ -204,7 +204,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
          <Name>{}</Name><ScheduleFromStart>1</ScheduleFromStart><StartDate>{}</StartDate>\
          <CriticalSlackLimit>{}</CriticalSlackLimit>\
          <CalendarUID>{}</CalendarUID><MinutesPerDay>480</MinutesPerDay><MinutesPerWeek>2400</MinutesPerWeek>\
-         <DaysPerMonth>20</DaysPerMonth><HonorConstraints>0</HonorConstraints><MultipleCriticalPaths>{}</MultipleCriticalPaths>\
+         <DaysPerMonth>20</DaysPerMonth><HonorConstraints>{}</HonorConstraints><MultipleCriticalPaths>{}</MultipleCriticalPaths>\
          <NewTasksEffortDriven>0</NewTasksEffortDriven><SplitsInProgressTasks>1</SplitsInProgressTasks>\
          <NewTasksAreManual>0</NewTasksAreManual>\
          <ProjectExternallyEdited>0</ProjectExternallyEdited>",
@@ -212,6 +212,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         dt(project.start),
         project.critical_slack_limit,
         project.calendar + 1,
+        u8::from(!project.honor_constraints),
         u8::from(project.multiple_critical_paths)
     );
 

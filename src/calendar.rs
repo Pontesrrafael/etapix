@@ -297,6 +297,18 @@ impl Calendars {
             (_, false) => self.project().finish_at(self.project().w(at) + lag),
         }
     }
+
+    /// Takes a link lag back off a successor's late date `at` (backward pass): the result is
+    /// the start of the working minute the lag reaches, so a predecessor on another calendar
+    /// can finish late right up to it (a seven-day task before a 1-day lag ending Monday 09:00
+    /// may finish late on Sunday).
+    pub fn lag_back(&self, at: At, lag: Wm, elapsed: bool) -> At {
+        match (lag, elapsed) {
+            (0, _) => at,
+            (_, true) => at - lag,
+            (_, false) => self.project().start_at(self.project().w(at) - lag),
+        }
+    }
 }
 
 #[cfg(test)]

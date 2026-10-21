@@ -141,6 +141,9 @@ pub struct Project {
     /// Every task without successors closes its own critical path (its early finish is its late
     /// finish) instead of all of them ending at the project finish.
     pub multiple_critical_paths: bool,
+    /// "Tasks will always honor their constraint dates" (on by default): when off, links win
+    /// over must/no-later-than constraints in the forward pass.
+    pub honor_constraints: bool,
     pub calendars: Vec<Calendar>,
     /// Index of the project calendar in `calendars`.
     pub calendar: usize,

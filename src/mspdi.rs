@@ -386,6 +386,8 @@ pub fn read_project(xml: &str) -> Result<Project> {
         start,
         critical_slack_limit: text(root, "CriticalSlackLimit").map_or(Ok(0), |_| int(root, "CriticalSlackLimit"))?,
         multiple_critical_paths: text(root, "MultipleCriticalPaths") == Some("1"),
+        // MSPDI writes 0 for "honor constraints" on (see mspdi_write).
+        honor_constraints: text(root, "HonorConstraints") != Some("1"),
         calendars,
         calendar,
         tasks,

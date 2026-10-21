@@ -35,7 +35,8 @@ const SERIES_STEPS: [(&str, Op); 5] = [
 const HALF_TIME_STEPS: [(&str, Op); 2] = [("1-add-R2-50pct", Op::Add("R2", 0.5)), ("2-del-R1", Op::Remove("R1"))];
 
 fn golden(file: &str) -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/b3").join(file);
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let path = ["b3", "b12"].iter().map(|d| base.join(d).join(file)).find(|p| p.exists()).unwrap_or(base.join("b3").join(file));
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
@@ -128,4 +129,11 @@ fn effort_driven_add_and_remove() {
         ("B3-H-FU-ED", "base-3d-R1", &HALF_TIME_STEPS),
         ("B3-H-FW", "base-3d-R1", &HALF_TIME_STEPS),
     ]);
+}
+
+#[test]
+fn batch12_effort_driven_removal_and_less_work() {
+    const FD_ED_REMOVE: [(&str, Op); 1] = [("1-del-R1", Op::Remove("R1"))];
+    const FW_LESS: [(&str, Op); 2] = [("1-dur-6d", Op::Duration(6 * DAY)), ("2-work-16h", Op::TaskWork(16.0 * 60.0))];
+    assert_series(&[("B12-FD-ED-remover", "base-4d-R1-R2", &FD_ED_REMOVE), ("B12-FW-reduzir", "base-4d-R1-R2", &FW_LESS)]);
 }
