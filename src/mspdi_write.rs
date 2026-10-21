@@ -205,7 +205,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
          <CriticalSlackLimit>{}</CriticalSlackLimit>\
          <CalendarUID>{}</CalendarUID><MinutesPerDay>480</MinutesPerDay><MinutesPerWeek>2400</MinutesPerWeek>\
          <DaysPerMonth>20</DaysPerMonth><HonorConstraints>{}</HonorConstraints><MultipleCriticalPaths>{}</MultipleCriticalPaths>\
-         <NewTasksEffortDriven>0</NewTasksEffortDriven><SplitsInProgressTasks>1</SplitsInProgressTasks>\
+         <NewTasksEffortDriven>0</NewTasksEffortDriven><SplitsInProgressTasks>1</SplitsInProgressTasks>{}\
          <NewTasksAreManual>0</NewTasksAreManual>\
          <ProjectExternallyEdited>0</ProjectExternallyEdited>",
         esc(name),
@@ -213,7 +213,8 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         project.critical_slack_limit,
         project.calendar + 1,
         u8::from(!project.honor_constraints),
-        u8::from(project.multiple_critical_paths)
+        u8::from(project.multiple_critical_paths),
+        project.status_date.map_or(String::new(), |d| format!("<StatusDate>{}</StatusDate>", dt(d)))
     );
 
     // Calendars: base calendars get UID index + 1; resource calendars follow.

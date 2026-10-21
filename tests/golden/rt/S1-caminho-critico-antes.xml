@@ -3,10 +3,10 @@
 	<SaveVersion>14</SaveVersion>
 	<BuildNumber>16.0.20430.20182</BuildNumber>
 	<Name>S1-caminho-critico-antes.xml</Name>
-	<GUID>EDE8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+	<GUID>A7356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 	<Title>S1-caminho-critico-antes</Title>
 	<CreationDate>2026-10-21T08:00:00</CreationDate>
-	<LastSaved>2026-10-21T15:34:00</LastSaved>
+	<LastSaved>2026-10-21T15:42:00</LastSaved>
 	<ScheduleFromStart>1</ScheduleFromStart>
 	<StartDate>2026-11-02T08:00:00</StartDate>
 	<FinishDate>2026-11-13T18:00:00</FinishDate>
@@ -106,7 +106,7 @@
 	<Calendars>
 		<Calendar>
 			<UID>1</UID>
-			<GUID>F9E8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>B3356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Padrão</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -196,14 +196,14 @@
 	<Tasks>
 		<Task>
 			<UID>0</UID>
-			<GUID>EFE8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>A9356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>S1-caminho-critico-antes</Name>
 			<Active>1</Active>
 			<Manual>0</Manual>
 			<Type>1</Type>
 			<IsNull>0</IsNull>
-			<CreateDate>2026-10-21T15:34:00</CreateDate>
+			<CreateDate>2026-10-21T15:42:00</CreateDate>
 			<WBS>0</WBS>
 			<OutlineNumber>0</OutlineNumber>
 			<OutlineLevel>0</OutlineLevel>
@@ -284,7 +284,7 @@
 		</Task>
 		<Task>
 			<UID>1</UID>
-			<GUID>F5E8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>AF356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>A</Name>
 			<Active>1</Active>
@@ -372,7 +372,7 @@
 		</Task>
 		<Task>
 			<UID>2</UID>
-			<GUID>F6E8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>B0356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>B</Name>
 			<Active>1</Active>
@@ -467,7 +467,7 @@
 		</Task>
 		<Task>
 			<UID>3</UID>
-			<GUID>F7E8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>B1356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>C</Name>
 			<Active>1</Active>
@@ -562,7 +562,7 @@
 		</Task>
 		<Task>
 			<UID>4</UID>
-			<GUID>F8E8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>B2356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>4</ID>
 			<Name>D</Name>
 			<Active>1</Active>
@@ -706,7 +706,7 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T15:34:00</CreationDate>
+			<CreationDate>2026-10-21T15:42:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
@@ -714,7 +714,7 @@
 	<Assignments>
 		<Assignment>
 			<UID>1</UID>
-			<GUID>05E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BF356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -758,7 +758,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T15:34:00</CreationDate>
+			<CreationDate>2026-10-21T15:42:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -804,7 +804,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>2</UID>
-			<GUID>06E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>C0356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>2</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -848,7 +848,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T15:34:00</CreationDate>
+			<CreationDate>2026-10-21T15:42:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -878,7 +878,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>3</UID>
-			<GUID>07E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>C1356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>3</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -922,7 +922,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T15:34:00</CreationDate>
+			<CreationDate>2026-10-21T15:42:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -936,7 +936,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>4</UID>
-			<GUID>08E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>C2356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>4</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -980,7 +980,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T15:34:00</CreationDate>
+			<CreationDate>2026-10-21T15:42:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -1004,25 +1004,25 @@
 	<BoardColumns>
 		<BoardColumn>
 			<UID>1</UID>
-			<GUID>FFE8186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>B9356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Não Iniciada</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>2</UID>
-			<GUID>00E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BA356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Próximo</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>3</UID>
-			<GUID>01E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BB356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>Em andamento</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>4</UID>
-			<GUID>02E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BC356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>Concluído</Name>
 		</BoardColumn>
@@ -1030,7 +1030,7 @@
 	<Sprints>
 		<Sprint>
 			<UID>1</UID>
-			<GUID>03E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BD356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Nenhum Sprint</Name>
 			<DurationUnits>39</DurationUnits>
@@ -1038,7 +1038,7 @@
 		</Sprint>
 		<Sprint>
 			<UID>2</UID>
-			<GUID>04E9186C-86CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>BE356278-87CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Sprint 1</Name>
 			<Start>2026-11-02T08:00:00</Start>

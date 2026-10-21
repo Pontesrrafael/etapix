@@ -219,7 +219,34 @@ fn read_calendars(root: Node) -> Result<(Vec<Calendar>, HashMap<i64, usize>)> {
                         d += chrono::Duration::days(1);
                     }
                 }
-                t => return err(format!("calendar exception type {t} (monthly/yearly) is not supported yet")),
+                // Monthly (4 by day, 5 by position) every `Period` months; yearly (2 by day,
+                // 3 by position) in `Month` (0-based).
+                t @ ("2" | "3" | "4" | "5") => {
+                    let yearly = t == "2" || t == "3";
+                    let month = if yearly { Some(int(exc, "Month")? as u32 + 1) } else { None };
+                    let by_day = t == "2" || t == "4";
+                    let (mut y, mut m) = (from.year(), from.month());
+                    let mut k = 0;
+                    while NaiveDate::from_ymd_opt(y, m, 1).unwrap() <= to {
+                        let wanted = match month {
+                            Some(mm) => m == mm,
+                            None => k % every == 0,
+                        };
+                        if wanted {
+                            let day = if by_day {
+                                NaiveDate::from_ymd_opt(y, m, int(exc, "MonthDay")? as u32)
+                            } else {
+                                nth_in_month(y, m, int(exc, "MonthPosition")?, int(exc, "MonthItem")?)?
+                            };
+                            if let Some(d) = day.filter(|d| from <= *d && *d <= to) {
+                                cal.exceptions.push(Exception { from: d, to: d, shifts: shifts.clone() });
+                            }
+                        }
+                        k += 1;
+                        (y, m) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+                    }
+                }
+                t => return err(format!("calendar exception type {t} is not supported")),
             }
         }
         calendars.push(cal);
@@ -230,6 +257,26 @@ fn read_calendars(root: Node) -> Result<(Vec<Calendar>, HashMap<i64, usize>)> {
         resolve(uid, &by_uid, &mut calendars, &mut index, 0)?;
     }
     Ok((calendars, index))
+}
+
+/// The `position`-th (0-3, or 4 = last) day of kind `item` (3 = Sunday ... 9 = Saturday,
+/// 0 = any day) in a month.
+fn nth_in_month(y: i32, m: u32, position: i64, item: i64) -> Result<Option<NaiveDate>> {
+    let days: Vec<NaiveDate> = (1..=31)
+        .filter_map(|d| NaiveDate::from_ymd_opt(y, m, d))
+        .filter(|d| match item {
+            0 => true,
+            3..=9 => d.weekday().num_days_from_sunday() as i64 == item - 3,
+            _ => false,
+        })
+        .collect();
+    if !(0..=9).contains(&item) || matches!(item, 1 | 2) {
+        return err(format!("calendar exception day kind {item} is not supported yet"));
+    }
+    Ok(match position {
+        4 => days.last().copied(),
+        p => days.get(p as usize).copied(),
+    })
 }
 
 /// MSPDI duration and lag formats counted in elapsed time (em, eh, ed, ew, emo and their
@@ -380,6 +427,17 @@ pub fn read_project(xml: &str) -> Result<Project> {
             parse_datetime(req(node, "Start")?)?,
             parse_datetime(req(node, "Finish")?)?,
             parse_duration(req(node, "Work")?)? as f64,
+            // Actual (2) and remaining (1) work per stretch, when present.
+            children(node, "TimephasedData")
+                .filter(|t| matches!(text(*t, "Type"), Some("1" | "2")))
+                .map(|t| {
+                    Ok((
+                        parse_datetime(req(t, "Start")?)?,
+                        parse_datetime(req(t, "Finish")?)?,
+                        parse_duration(req(t, "Value")?)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?,
         ));
     }
     let mut project = Project {
@@ -388,6 +446,7 @@ pub fn read_project(xml: &str) -> Result<Project> {
         multiple_critical_paths: text(root, "MultipleCriticalPaths") == Some("1"),
         // MSPDI writes 0 for "honor constraints" on (see mspdi_write).
         honor_constraints: text(root, "HonorConstraints") != Some("1"),
+        status_date: text(root, "StatusDate").filter(|d| !d.starts_with("NA")).map(parse_datetime).transpose()?,
         calendars,
         calendar,
         tasks,
@@ -395,13 +454,32 @@ pub fn read_project(xml: &str) -> Result<Project> {
         assignments,
     };
     let cals = Calendars::new(&project).map_err(|e| MspdiError(e.0))?;
-    for (k, (a, (task_start, a_start, a_finish, work))) in project.assignments.iter_mut().zip(timing).enumerate() {
-        // The profile is flattened to one constant rate; timephased detail is not read yet. Its
-        // length counts on the assignment's own calendar, its offset on the task's.
+    for (k, (a, (task_start, a_start, a_finish, work, mut chunks))) in project.assignments.iter_mut().zip(timing).enumerate() {
+        // Lengths count on the assignment's own calendar, the offset on the task's.
         let (tl, atl, clock) = (cals.task(a.task), cals.assignment(k), &cals.clock);
         let len = atl.w(clock.at(a_finish)) - atl.w(clock.at(a_start));
         a.offset = tl.w(clock.at(a_start)) - tl.w(clock.at(task_start));
-        a.profile = vec![Piece { len, rate: if len > 0 { work / len as f64 } else { 0.0 } }];
+        // The timephased stretches give the real rates (a stretched fixed-work assignment that
+        // later got more work runs slow, then at full units); without them, one flat rate.
+        chunks.sort_by_key(|c| c.0);
+        let mut profile: Vec<Piece> = Vec::new();
+        for (s, f, value) in chunks {
+            let l = atl.w(clock.at(f)) - atl.w(clock.at(s));
+            if l <= 0 {
+                continue;
+            }
+            let rate = value as f64 / l as f64;
+            match profile.last_mut() {
+                Some(last) if (last.rate - rate).abs() < 1e-6 => last.len += l,
+                _ => profile.push(Piece { len: l, rate }),
+            }
+        }
+        let covered: Wm = profile.iter().map(|p| p.len).sum();
+        a.profile = if !profile.is_empty() && covered == len {
+            profile
+        } else {
+            vec![Piece { len, rate: if len > 0 { work / len as f64 } else { 0.0 } }]
+        };
     }
     Ok(project)
 }
@@ -436,6 +514,15 @@ pub fn read_results(xml: &str) -> Result<Vec<TaskResult>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timephased_profile_keeps_slow_then_full_rate() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/b3/B3-FW-4-work-80h.xml");
+        let p = read_project(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let r2 = p.assignments.iter().find(|a| p.resources[a.resource].name == "R2").unwrap();
+        let rates: Vec<(Wm, String)> = r2.profile.iter().map(|x| (x.len, format!("{:.3}", x.rate))).collect();
+        assert_eq!(rates, vec![(48 * 60, "0.333".into()), (24 * 60, "1.000".into())]);
+    }
 
     #[test]
     fn durations() {

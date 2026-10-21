@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 77 leveling and CPM cases in `tests/golden.rs` and every step
-of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 121 files.
+The golden tests pass in full: the 81 leveling and CPM cases in `tests/golden.rs` and every step
+of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 126 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -59,6 +59,9 @@ of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 121 file
   actual start as late start and measures slack at the finish. Progress on tasks with resources
   (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
+- Monthly and yearly recurring exceptions (by day or by position, such as the last Friday of
+  November; MSPDI months are 0-based). Status date. Timephased work read from MSPDI keeps each
+  stretch's own rate.
 - "Honor constraints" off (links win in the forward pass; late dates still follow constraints).
   Working-time lags count on the project calendar both ways, between tasks on any calendars.
   Less work on an assignment resets it to its nominal units.
@@ -106,14 +109,13 @@ of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 121 file
 
 ## Not covered yet (needs new golden experiments)
 
-- Summary constraints other than start-no-earlier-than (rejected). Finish-to-finish and
-  start-to-finish links into a summary are rejected, as Project itself refuses them.
-- Reading timephased data from MSPDI. Profiles read from XML are flattened to a single rate.
+- Finish-no-later-than on a summary. Project accepts it but its own MSPDI export drops it (the
+  summary is written as ASAP and reopening loses the effect), so it cannot travel through MSPDI.
+  Project refuses every other constraint on a summary, and finish-to-finish or start-to-finish
+  links into one; the reader rejects those too.
 - Splitting during leveling for tasks whose assignments do not cover the whole task evenly.
 - Any case where the "level individual assignments" setting changes the result. It made no
   difference in batch 3.
-- Monthly and yearly recurring calendar exceptions (rejected).
 - Leveling across different calendars. Bookings are compared as absolute stretches, so
   overnight gaps on unusual calendars could overlap.
 - "Level individual assignments" and partial date ranges.
-- Status date as a field of the model.

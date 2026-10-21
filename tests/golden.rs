@@ -227,6 +227,13 @@ fn honor_constraints_off_and_cross_calendar_lag() {
     assert_cases(&[("b12", "B12-H1-restricoes-desligadas", None), ("b12", "B12-L1-lag-entre-calendarios", None)]);
 }
 
+#[test]
+fn monthly_and_yearly_exceptions() {
+    let cases = ["B13-E1-mensal-dia-10", "B13-E2-mensal-primeira-segunda", "B13-E3-anual-25-dez", "B13-E4-anual-ultima-sexta-nov"];
+    let cases: Vec<_> = cases.iter().map(|c| ("b13", *c, None)).collect();
+    assert_cases(&cases);
+}
+
 /// Batch 11 saved Project's leveling in the file. Clearing those delays and leveling with the
 /// same period basis must give back Project's dates; the saved file must also schedule as is.
 #[test]
