@@ -8,13 +8,13 @@ use std::path::Path;
 
 use pjsched::calendar::{Calendars, Clock};
 use pjsched::cpm::{self, TaskSchedule};
-use pjsched::leveling::{self, LevelOrder, LevelingOptions};
+use pjsched::leveling::{self, LevelOrder, LevelingOptions, PeriodBasis};
 use pjsched::mspdi::{read_project, read_results, TaskResult};
 
-const STANDARD: LevelingOptions = LevelingOptions { order: LevelOrder::Standard, within_slack: false };
+const STANDARD: LevelingOptions = LevelingOptions { order: LevelOrder::Standard, within_slack: false, basis: PeriodBasis::Day };
 
 fn opts(order: LevelOrder, within_slack: bool) -> LevelingOptions {
-    LevelingOptions { order, within_slack }
+    LevelingOptions { order, within_slack, basis: PeriodBasis::Day }
 }
 
 fn diff(case: &str, clock: &Clock, got: &[TaskSchedule], want: &[TaskResult]) -> Vec<String> {
@@ -215,4 +215,28 @@ fn leveling_within_slack() {
         ("b2", "B2-C2-folga-longa-dentroDaFolga", Some(opts(Standard, true))),
         ("b2", "B2-C2-folga-longa-normal", Some(opts(Standard, false))),
     ]);
+}
+
+#[test]
+fn critical_path_options() {
+    assert_cases(&[("b11", "B11-K1-limite-folga-2d", None), ("b11", "B11-K2-multiplos-caminhos", None)]);
+}
+
+/// Batch 11 saved Project's leveling in the file. Clearing those delays and leveling with the
+/// same period basis must give back Project's dates; the saved file must also schedule as is.
+#[test]
+fn leveling_period_basis() {
+    let mut problems = Vec::new();
+    for (case, basis) in [("B11-L1-base-semana", PeriodBasis::Week), ("B11-L1-base-dia", PeriodBasis::Day), ("B11-L1-base-hora", PeriodBasis::Hour)] {
+        problems.extend(run("b11", case, None));
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/b11").join(format!("{case}-antes.xml"));
+        let xml = std::fs::read_to_string(path).unwrap();
+        let mut project = read_project(&xml).unwrap();
+        project.tasks.iter_mut().for_each(|t| t.leveling_delay = 0);
+        let cals = Calendars::new(&project).unwrap();
+        let options = LevelingOptions { order: LevelOrder::Standard, within_slack: false, basis };
+        let leveled = leveling::level(&project, &cals, options).unwrap();
+        problems.extend(diff(&format!("{case} (nivelado do zero)"), &cals.clock, &leveled, &read_results(&xml).unwrap()));
+    }
+    assert!(problems.is_empty(), "{} divergences:\n{}", problems.len(), problems.join("\n"));
 }

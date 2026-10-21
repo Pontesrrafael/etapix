@@ -14,6 +14,8 @@
 //! - Leveling within slack caps the delay at the task's late start and leaves any remaining
 //!   overallocation unresolved.
 
+use chrono::Datelike;
+
 use crate::calendar::{At, Calendars};
 use crate::cpm::{self, Network, Placement, ScheduleError, TaskSchedule};
 use crate::model::{Assignment, Project, Wm, PRIORITY_DO_NOT_LEVEL};
@@ -29,12 +31,42 @@ pub enum LevelOrder {
 pub struct LevelingOptions {
     pub order: LevelOrder,
     pub within_slack: bool,
+    pub basis: PeriodBasis,
+}
+
+/// How overallocation is judged. Day and week compare each period's booked work with the
+/// resource's capacity in that period, so two half-day tasks may overlap within a day
+/// (observed, golden batch 11); minute and hour require spare units at every moment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeriodBasis {
+    Minute,
+    Hour,
+    Day,
+    Week,
 }
 
 impl Default for LevelingOptions {
     fn default() -> Self {
-        LevelingOptions { order: LevelOrder::Standard, within_slack: false }
+        LevelingOptions { order: LevelOrder::Standard, within_slack: false, basis: PeriodBasis::Day }
     }
+}
+
+/// Period boundaries (midnights, or Sunday midnights) in `tl`'s working minutes.
+fn period_bounds(cals: &Calendars, tl: &crate::calendar::Timeline, basis: PeriodBasis) -> Vec<Wm> {
+    let step = match basis {
+        PeriodBasis::Week => 7,
+        _ => 1,
+    };
+    let start = cals.clock.dt(cals.project_start).date();
+    let first = match basis {
+        PeriodBasis::Week => start - chrono::Duration::days(start.weekday().num_days_from_sunday() as i64),
+        _ => start,
+    } - chrono::Duration::days(364);
+    let mut out: Vec<Wm> = (0..(2000 / step))
+        .map(|k| tl.w(cals.clock.at((first + chrono::Duration::days(k * step)).and_hms_opt(0, 0, 0).unwrap())))
+        .collect();
+    out.dedup();
+    out
 }
 
 const EPS: f64 = 1e-9;
@@ -53,6 +85,11 @@ impl Usage {
     fn peak(&self, s: Wm, f: Wm) -> f64 {
         let points = std::iter::once(s).chain(self.0.iter().map(|&(a, _, _)| a).filter(|&a| s < a && a < f));
         points.map(|t| self.load_at(t)).fold(0.0, f64::max)
+    }
+
+    /// Booked work (minutes x units) inside `[lo, hi)`.
+    fn load(&self, lo: Wm, hi: Wm) -> f64 {
+        self.0.iter().map(|&(s, f, u)| (f.min(hi) - s.max(lo)).max(0) as f64 * u).sum()
     }
 
     /// First interval boundary strictly after `t`.
@@ -116,8 +153,30 @@ pub fn level(
         let fits_at = |t: Wm, usage: &[Usage]| {
             assignments.iter().all(|a| bookings(a, t).iter().all(|&(s, f, r)| free(a, s, f, r, usage)))
         };
+        let bounds = match options.basis {
+            PeriodBasis::Day | PeriodBasis::Week => period_bounds(cals, tl, options.basis),
+            PeriodBasis::Minute | PeriodBasis::Hour => Vec::new(),
+        };
+        // Day/week basis: each period's booked work must fit the period's capacity.
+        let fits_periods = |t: Wm, usage: &[Usage]| {
+            assignments.iter().all(|a| {
+                let max = project.resources[a.resource].max_units;
+                bookings(a, t).iter().all(|&(s, f, r)| {
+                    let k0 = bounds.partition_point(|&b| b <= s).saturating_sub(1);
+                    bounds[k0..].windows(2).take_while(|w| w[0] < f).all(|w| {
+                        let mine = (f.min(w[1]) - s.max(w[0])).max(0) as f64 * r;
+                        mine == 0.0 || usage[a.resource].load(w[0], w[1]) + mine <= (w[1] - w[0]) as f64 * max + EPS
+                    })
+                })
+            })
+        };
         let next_event = |t: Wm, usage: &[Usage]| {
-            assignments.iter().filter_map(|a| usage[a.resource].next_event(t)).min()
+            let booked = assignments.iter().filter_map(|a| usage[a.resource].next_event(t)).min();
+            let period = bounds.iter().copied().find(|&b| b > t);
+            match (booked, period) {
+                (Some(x), Some(y)) => Some(x.min(y)),
+                (x, y) => x.or(y),
+            }
         };
         // Splitting is modeled only for tasks whose assignments all run the whole task evenly.
         let uniform = assignments
@@ -132,13 +191,25 @@ pub fn level(
             vec![(es, es + task.duration)]
         } else if task.leveling_can_split && uniform {
             split = true;
+            // Stretches never cross a period bound (`next_event` stops there), so on a day/week
+            // basis each stretch is checked against its own period's capacity.
             let fits = |s: Wm, f: Wm, usage: &[Usage]| {
-                assignments.iter().all(|a| free(a, s, f, a.profile[0].rate, usage))
+                assignments.iter().all(|a| {
+                    let rate = a.profile[0].rate;
+                    if bounds.is_empty() {
+                        return free(a, s, f, rate, usage);
+                    }
+                    let k = bounds.partition_point(|&b| b <= s).saturating_sub(1);
+                    let (lo, hi) = (bounds[k], bounds.get(k + 1).copied().unwrap_or(f));
+                    let cap = (hi - lo) as f64 * project.resources[a.resource].max_units;
+                    usage[a.resource].load(lo, hi) + (f - s) as f64 * rate <= cap + EPS
+                })
             };
             fill_gaps(es, task.duration, &usage, &fits, &next_event)
         } else {
             let mut t = es;
-            while !fits_at(t, &usage) {
+            let fits = |t: Wm, usage: &[Usage]| if bounds.is_empty() { fits_at(t, usage) } else { fits_periods(t, usage) };
+            while !fits(t, &usage) {
                 // No later booking to wait for: the task alone exceeds max units; leave it.
                 let Some(e) = next_event(t, &usage) else { break };
                 t = e;

@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 70 leveling and CPM cases in `tests/golden.rs` and every step
-of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 109 files.
+The golden tests pass in full: the 75 leveling and CPM cases in `tests/golden.rs` and every step
+of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 114 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -59,6 +59,10 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 109 files
   actual start as late start and measures slack at the finish. Progress on tasks with resources
   (actual work per assignment), and leveling delays saved in a file, which are kept on reopen.
 
+- Leveling period basis. Day (Project's default) and week compare each period's booked work
+  with its capacity, so two half-day tasks may share a day; hour and minute need spare units at
+  every moment. Critical slack limit and multiple critical paths (each chain end closes its own
+  path).
 - As-late-as-possible tasks with successors: they move to their late dates and successors
   follow them. A start-no-earlier-than on a summary binds its subtasks; a start-to-start link
   out of a summary reads the summary's (earliest subtask) start.
@@ -112,9 +116,7 @@ of the 8 edit series in `tests/edits.rs`. The round trip agrees on all 109 files
   which no experiment has pinned down yet.
 - Leveling across different calendars. Bookings are compared as absolute stretches, so
   overnight gaps on unusual calendars could overlap.
-- Leveling period bases other than day by day.
 - "Level individual assignments" and partial date ranges.
 - Status date as a field of the model.
 - "Honor constraints" turned off.
-- Multiple critical paths and the "critical if slack is at most N" setting.
 - Writing MSPDI.

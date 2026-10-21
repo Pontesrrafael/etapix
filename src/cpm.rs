@@ -355,7 +355,8 @@ fn schedule_pass(
             };
             from_succs = Some(from_succs.map_or(bound, |b| b.min(bound)));
         }
-        let base = from_succs.unwrap_or_else(|| w(project_finish));
+        let path_end = if project.multiple_critical_paths { finishes[i] } else { project_finish };
+        let base = from_succs.unwrap_or_else(|| w(path_end));
         let at = |d| cals.clock.at(d);
         let mut lf = match &task.constraint {
             Constraint::MustStartOn(d) => w(tl.snap_start(at(*d))) + span[i],
@@ -388,7 +389,7 @@ fn schedule_pass(
                     }
                 })
                 .min();
-            late_finish[i] = raw.unwrap_or(if net.succs[i].is_empty() { project_finish } else { late_finish[i] });
+            late_finish[i] = raw.unwrap_or(if net.succs[i].is_empty() { path_end } else { late_finish[i] });
             if task.duration == 0 {
                 late_start[i] = late_finish[i];
             }
@@ -442,7 +443,7 @@ fn schedule_pass(
             total_slack,
             free_slack: free_slack.max(0),
             // Finished work cannot slip: completed tasks are never critical.
-            critical: total_slack <= 0 && project.tasks[i].progress.percent_complete < 100,
+            critical: total_slack <= project.critical_slack_limit && project.tasks[i].progress.percent_complete < 100,
             leveling_delay: if alap { 0 } else { (starts[i] - early[i]).max(0) },
             segments: segments[i].clone(),
         });
@@ -456,6 +457,7 @@ fn schedule_pass(
         let max = |f: fn(&TaskSchedule) -> i64| leaves.iter().map(|t| f(t)).max().unwrap();
         let (start, finish) = (min(|t| t.start), max(|t| t.finish));
         let total_slack = min(|t| t.total_slack);
+        let limit = project.critical_slack_limit;
         out[s] = Some(TaskSchedule {
             early_start: min(|t| t.early_start),
             start,
@@ -464,7 +466,7 @@ fn schedule_pass(
             late_finish: max(|t| t.late_finish),
             total_slack,
             free_slack: min(|t| t.free_slack),
-            critical: total_slack <= 0,
+            critical: total_slack <= limit,
             leveling_delay: 0,
             segments: vec![(start, finish)],
         });

@@ -382,7 +382,16 @@ pub fn read_project(xml: &str) -> Result<Project> {
             parse_duration(req(node, "Work")?)? as f64,
         ));
     }
-    let mut project = Project { start, calendars, calendar, tasks, resources, assignments };
+    let mut project = Project {
+        start,
+        critical_slack_limit: text(root, "CriticalSlackLimit").map_or(Ok(0), |_| int(root, "CriticalSlackLimit"))?,
+        multiple_critical_paths: text(root, "MultipleCriticalPaths") == Some("1"),
+        calendars,
+        calendar,
+        tasks,
+        resources,
+        assignments,
+    };
     let cals = Calendars::new(&project).map_err(|e| MspdiError(e.0))?;
     for (k, (a, (task_start, a_start, a_finish, work))) in project.assignments.iter_mut().zip(timing).enumerate() {
         // The profile is flattened to one constant rate; timephased detail is not read yet. Its

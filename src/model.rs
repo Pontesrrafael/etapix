@@ -136,6 +136,11 @@ impl Assignment {
 #[derive(Debug, Clone)]
 pub struct Project {
     pub start: NaiveDateTime,
+    /// Tasks with total slack at or below this (working minutes) are critical.
+    pub critical_slack_limit: Wm,
+    /// Every task without successors closes its own critical path (its early finish is its late
+    /// finish) instead of all of them ending at the project finish.
+    pub multiple_critical_paths: bool,
     pub calendars: Vec<Calendar>,
     /// Index of the project calendar in `calendars`.
     pub calendar: usize,
