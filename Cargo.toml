@@ -1,0 +1,10 @@
+[package]
+name = "pjsched"
+version = "0.1.0"
+edition = "2021"
+description = "Clean-room project scheduling engine (CPM + resource leveling), specified by observed MSPDI behavior"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+roxmltree = "0.20"

@@ -1,0 +1,4 @@
+# The GNU host toolchain ships its own linker; this machine has no MSVC Build Tools.
+[toolchain]
+channel = "stable-x86_64-pc-windows-gnu"
+components = ["clippy", "rustfmt"]
