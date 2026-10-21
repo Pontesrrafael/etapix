@@ -3,10 +3,10 @@
 	<SaveVersion>14</SaveVersion>
 	<BuildNumber>16.0.20430.20182</BuildNumber>
 	<Name>S7-calendario-antes.xml</Name>
-	<GUID>9482D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+	<GUID>04BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 	<Title>S7-calendario-antes</Title>
 	<CreationDate>2026-10-21T08:00:00</CreationDate>
-	<LastSaved>2026-10-21T14:56:00</LastSaved>
+	<LastSaved>2026-10-21T15:18:00</LastSaved>
 	<ScheduleFromStart>1</ScheduleFromStart>
 	<StartDate>2026-11-02T08:00:00</StartDate>
 	<FinishDate>2026-11-09T18:00:00</FinishDate>
@@ -106,7 +106,7 @@
 	<Calendars>
 		<Calendar>
 			<UID>1</UID>
-			<GUID>9E82D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0EBC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<Name>Padrão</Name>
 			<IsBaseCalendar>1</IsBaseCalendar>
 			<IsBaselineCalendar>0</IsBaselineCalendar>
@@ -217,14 +217,14 @@
 	<Tasks>
 		<Task>
 			<UID>0</UID>
-			<GUID>9682D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>06BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>S7-calendario-antes</Name>
 			<Active>1</Active>
 			<Manual>0</Manual>
 			<Type>1</Type>
 			<IsNull>0</IsNull>
-			<CreateDate>2026-10-21T14:56:00</CreateDate>
+			<CreateDate>2026-10-21T15:18:00</CreateDate>
 			<WBS>0</WBS>
 			<OutlineNumber>0</OutlineNumber>
 			<OutlineLevel>0</OutlineLevel>
@@ -305,7 +305,7 @@
 		</Task>
 		<Task>
 			<UID>1</UID>
-			<GUID>9C82D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0CBC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>A</Name>
 			<Active>1</Active>
@@ -393,7 +393,7 @@
 		</Task>
 		<Task>
 			<UID>2</UID>
-			<GUID>9D82D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>0DBC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>B</Name>
 			<Active>1</Active>
@@ -530,7 +530,7 @@
 			<IsInactive>0</IsInactive>
 			<IsEnterprise>0</IsEnterprise>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T14:56:00</CreationDate>
+			<CreationDate>2026-10-21T15:18:00</CreationDate>
 			<IsCostResource>0</IsCostResource>
 			<IsBudget>0</IsBudget>
 		</Resource>
@@ -538,7 +538,7 @@
 	<Assignments>
 		<Assignment>
 			<UID>1</UID>
-			<GUID>A782D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>17BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>1</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -582,7 +582,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T14:56:00</CreationDate>
+			<CreationDate>2026-10-21T15:18:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -620,7 +620,7 @@
 		</Assignment>
 		<Assignment>
 			<UID>2</UID>
-			<GUID>A882D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>18BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<TaskUID>2</TaskUID>
 			<ResourceUID>-65535</ResourceUID>
 			<PercentWorkComplete>0</PercentWorkComplete>
@@ -664,7 +664,7 @@
 			<BCWS>0.00</BCWS>
 			<BCWP>0.00</BCWP>
 			<BookingType>0</BookingType>
-			<CreationDate>2026-10-21T14:56:00</CreationDate>
+			<CreationDate>2026-10-21T15:18:00</CreationDate>
 			<BudgetCost>0</BudgetCost>
 			<BudgetWork>PT0H0M0S</BudgetWork>
 			<TimephasedData>
@@ -696,25 +696,25 @@
 	<BoardColumns>
 		<BoardColumn>
 			<UID>1</UID>
-			<GUID>A182D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>11BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Não Iniciada</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>2</UID>
-			<GUID>A282D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>12BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Próximo</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>3</UID>
-			<GUID>A382D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>13BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>2</ID>
 			<Name>Em andamento</Name>
 		</BoardColumn>
 		<BoardColumn>
 			<UID>4</UID>
-			<GUID>A482D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>14BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>3</ID>
 			<Name>Concluído</Name>
 		</BoardColumn>
@@ -722,7 +722,7 @@
 	<Sprints>
 		<Sprint>
 			<UID>1</UID>
-			<GUID>A582D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>15BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>0</ID>
 			<Name>Nenhum Sprint</Name>
 			<DurationUnits>39</DurationUnits>
@@ -730,7 +730,7 @@
 		</Sprint>
 		<Sprint>
 			<UID>2</UID>
-			<GUID>A682D126-81CD-F111-A13A-AC45EF2C19D2</GUID>
+			<GUID>16BC7A30-84CD-F111-A13A-AC45EF2C19D2</GUID>
 			<ID>1</ID>
 			<Name>Sprint 1</Name>
 			<Start>2026-11-02T08:00:00</Start>

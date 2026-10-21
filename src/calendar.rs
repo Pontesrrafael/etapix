@@ -197,6 +197,7 @@ pub struct Calendars {
     timelines: Vec<Timeline>,
     project: usize,
     task: Vec<usize>,
+    assignment: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,10 +240,11 @@ impl Calendars {
                     .collect();
                 res.sort_unstable();
                 res.dedup();
-                if res.len() > 1 {
-                    return Err(CalendarError(format!("{}: resources on different calendars", t.name)));
+                // Resources on different calendars each work their own hours (see
+                // `assignment`); the task itself then counts on its own or the project calendar.
+                if res.len() == 1 {
+                    cals.extend(res);
                 }
-                cals.extend(res);
             }
             if cals.is_empty() {
                 cals.push(canonical(project.calendar));
@@ -251,7 +253,21 @@ impl Calendars {
             cals.dedup();
             task.push(get(cals, &mut timelines));
         }
-        Ok(Calendars { clock, project_start: clock.at(project.start), timelines, project: project_tl, task })
+        let mut assignment = Vec::with_capacity(project.assignments.len());
+        for a in &project.assignments {
+            let t = &project.tasks[a.task];
+            let i = if t.elapsed || t.ignore_resource_calendar {
+                task[a.task]
+            } else {
+                let mut cals: Vec<usize> = t.calendar.map(canonical).into_iter().collect();
+                cals.push(canonical(project.resources[a.resource].calendar.unwrap_or(project.calendar)));
+                cals.sort_unstable();
+                cals.dedup();
+                get(cals, &mut timelines)
+            };
+            assignment.push(i);
+        }
+        Ok(Calendars { clock, project_start: clock.at(project.start), timelines, project: project_tl, task, assignment })
     }
 
     pub fn project(&self) -> &Timeline {
@@ -264,6 +280,12 @@ impl Calendars {
 
     pub fn task(&self, i: usize) -> &Timeline {
         &self.timelines[self.task[i]]
+    }
+
+    /// The timeline assignment `k` works on: its resource's calendar (with the task's own), or
+    /// the task's timeline for elapsed tasks and tasks that ignore resource calendars.
+    pub fn assignment(&self, k: usize) -> &Timeline {
+        &self.timelines[self.assignment[k]]
     }
 
     /// Applies a link lag to `at`: elapsed lags add real time, working lags count on the project

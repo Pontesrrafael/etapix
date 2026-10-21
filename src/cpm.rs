@@ -143,13 +143,20 @@ pub struct EarlyStart {
 }
 
 /// Start (and the finish implied by it) for a task that must start at or after `at`.
+/// A milestone (zero duration) sits at the exact instant, without snapping to working time.
 fn from_start(tl: &Timeline, at: At, duration: Wm) -> (At, At) {
+    if duration == 0 {
+        return (at, at);
+    }
     let start = tl.snap_start(at);
     (start, tl.finish_after(start, duration))
 }
 
 /// Start (and exact finish) for a task that must finish at `at`.
 fn from_finish(tl: &Timeline, at: At, duration: Wm) -> (At, At) {
+    if duration == 0 {
+        return (at, at);
+    }
     (tl.start_at(tl.w(at) - duration), at)
 }
 
@@ -309,8 +316,9 @@ pub fn schedule(
         }
         late_finish[i] = tl.finish_at(lf);
         late_start[i] = tl.start_at(lf - span[i]);
-        if task.manual.is_some() {
-            // A manual task's late finish is the exact instant its successors ask for.
+        if task.manual.is_some() || task.duration == 0 {
+            // A manual task's (or milestone's) late finish is the exact instant its successors
+            // ask for.
             let raw = net.succs[i]
                 .iter()
                 .filter_map(|&(s, k)| {
@@ -324,7 +332,10 @@ pub fn schedule(
                     }
                 })
                 .min();
-            late_finish[i] = raw.unwrap_or(late_finish[i]);
+            late_finish[i] = raw.unwrap_or(if net.succs[i].is_empty() { project_finish } else { late_finish[i] });
+            if task.duration == 0 {
+                late_start[i] = late_finish[i];
+            }
         }
         if task.progress.percent_complete >= 100 {
             // Completed work has no float: its late dates are its actual dates.

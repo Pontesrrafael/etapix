@@ -369,7 +369,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             k + 1,
             project.tasks[a.task].uid,
             project.resources[a.resource].uid,
-            at(tl.finish_at(first + a.span())),
+            at(cals.assignment(k).finish_after(tl.start_at(first), a.span())),
             duration(total - actual),
             at(tl.start_at(first)),
             a.units,

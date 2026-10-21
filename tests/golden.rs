@@ -173,6 +173,19 @@ fn manually_scheduled_tasks() {
     assert_cases(&cases);
 }
 
+#[test]
+fn milestones_recurring_exceptions_and_resource_calendars() {
+    let cases = [
+        "B9-Z1-marcos",
+        "B9-Z2-marco-restricao",
+        "B9-E1-feriado-recorrente-semanal",
+        "B9-E2-excecao-varios-dias",
+        "B9-C1-recursos-calendarios-diferentes",
+    ];
+    let cases: Vec<_> = cases.iter().map(|c| ("b9", *c, None)).collect();
+    assert_cases(&cases);
+}
+
 /// "Level individual assignments" on and off gave identical results in these cases.
 #[test]
 fn leveling_multiple_resources() {

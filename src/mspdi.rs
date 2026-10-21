@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use roxmltree::{Document, Node};
 
 use crate::calendar::{Calendar, Calendars, Exception, Shift};
@@ -191,14 +191,36 @@ fn read_calendars(root: Node) -> Result<(Vec<Calendar>, HashMap<i64, usize>)> {
             }
         }
         for exc in child(node, "Exceptions").into_iter().flat_map(|e| children(e, "Exception")) {
-            if text(exc, "Type").is_some_and(|t| t != "1") {
-                return err("recurring calendar exceptions are not supported yet");
-            }
             let period = child(exc, "TimePeriod").ok_or_else(|| MspdiError("exception without period".into()))?;
             let from: NaiveDate = parse_datetime(req(period, "FromDate")?)?.date();
             let to: NaiveDate = parse_datetime(req(period, "ToDate")?)?.date();
             let shifts = working_times(exc, req(exc, "DayWorking")? == "1")?;
-            cal.exceptions.push(Exception { from, to, shifts });
+            let every = text(exc, "Period").and_then(|p| p.parse::<i64>().ok()).unwrap_or(1).max(1);
+            match text(exc, "Type").unwrap_or("1") {
+                // Daily: one block, or every `Period` days.
+                "1" if every == 1 => cal.exceptions.push(Exception { from, to, shifts }),
+                "1" => {
+                    let mut d = from;
+                    while d <= to {
+                        cal.exceptions.push(Exception { from: d, to: d, shifts: shifts.clone() });
+                        d += chrono::Duration::days(every);
+                    }
+                }
+                // Weekly: the DaysOfWeek bits (Sunday = 1 ... Saturday = 64) every `Period` weeks.
+                "6" => {
+                    let bits = int(exc, "DaysOfWeek")?;
+                    let week0 = from - chrono::Duration::days(from.weekday().num_days_from_sunday() as i64);
+                    let mut d = from;
+                    while d <= to {
+                        let week = (d - week0).num_days() / 7;
+                        if week % every == 0 && bits & (1 << d.weekday().num_days_from_sunday()) != 0 {
+                            cal.exceptions.push(Exception { from: d, to: d, shifts: shifts.clone() });
+                        }
+                        d += chrono::Duration::days(1);
+                    }
+                }
+                t => return err(format!("calendar exception type {t} (monthly/yearly) is not supported yet")),
+            }
         }
         calendars.push(cal);
         index.insert(uid, calendars.len() - 1);
@@ -362,10 +384,11 @@ pub fn read_project(xml: &str) -> Result<Project> {
     }
     let mut project = Project { start, calendars, calendar, tasks, resources, assignments };
     let cals = Calendars::new(&project).map_err(|e| MspdiError(e.0))?;
-    for (a, (task_start, a_start, a_finish, work)) in project.assignments.iter_mut().zip(timing) {
-        // The profile is flattened to one constant rate; timephased detail is not read yet.
-        let (tl, clock) = (cals.task(a.task), &cals.clock);
-        let len = tl.w(clock.at(a_finish)) - tl.w(clock.at(a_start));
+    for (k, (a, (task_start, a_start, a_finish, work))) in project.assignments.iter_mut().zip(timing).enumerate() {
+        // The profile is flattened to one constant rate; timephased detail is not read yet. Its
+        // length counts on the assignment's own calendar, its offset on the task's.
+        let (tl, atl, clock) = (cals.task(a.task), cals.assignment(k), &cals.clock);
+        let len = atl.w(clock.at(a_finish)) - atl.w(clock.at(a_start));
         a.offset = tl.w(clock.at(a_start)) - tl.w(clock.at(task_start));
         a.profile = vec![Piece { len, rate: if len > 0 { work / len as f64 } else { 0.0 } }];
     }
