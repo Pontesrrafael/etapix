@@ -18,7 +18,7 @@ use std::fmt::Write;
 
 use chrono::NaiveDateTime;
 
-use crate::calendar::{Calendar, Calendars, Shift};
+use crate::calendar::{At, Calendar, Calendars, Shift};
 use crate::cpm::TaskSchedule;
 use crate::mspdi::NS;
 use crate::model::{Constraint, LinkType, Project, TaskType, Wm};
@@ -102,6 +102,82 @@ fn constraint(c: &Constraint) -> (u8, Option<NaiveDateTime>) {
         Constraint::FinishNoEarlierThan(d) => (6, Some(d)),
         Constraint::FinishNoLaterThan(d) => (7, Some(d)),
     }
+}
+
+/// Per-day `(start, finish, working minutes)` stretches of `[a, b)` on task `i`'s timeline, the
+/// way Project chunks timephased data: a full day runs to the next working day's start, the last
+/// chunk ends at `b`.
+fn days(cals: &Calendars, i: usize, a: At, b: At) -> Vec<(At, At, Wm)> {
+    let tl = cals.task(i);
+    let mut out = Vec::new();
+    let mut at = tl.snap_start(a);
+    while at < b {
+        let midnight = cals.clock.at(cals.clock.dt(at).date().succ_opt().unwrap().and_hms_opt(0, 0, 0).unwrap());
+        let next = tl.snap_start(midnight).min(b);
+        let minutes = tl.w(next.min(midnight)) - tl.w(at);
+        if minutes > 0 {
+            out.push((at, next, minutes));
+        }
+        at = next;
+    }
+    out
+}
+
+/// Writes one `<TimephasedData>` record.
+fn timephased(out: &mut String, cals: &Calendars, kind: u8, uid: usize, (a, b): (At, At), unit: u8, value: &str) {
+    let at = |x| dt(cals.clock.dt(x));
+    let _ = write!(
+        out,
+        "<TimephasedData><Type>{kind}</Type><UID>{uid}</UID><Start>{}</Start><Finish>{}</Finish>         <Unit>{unit}</Unit><Value>{value}</Value></TimephasedData>",
+        at(a),
+        at(b)
+    );
+}
+
+/// End of the done part of a task in progress (`None` when nothing is done).
+fn stop(cals: &Calendars, i: usize, dur: Wm, s: &TaskSchedule, pct: u32) -> Option<At> {
+    let done = dur * pct as Wm / 100;
+    (done > 0).then(|| cals.task(i).finish_after(s.start, done))
+}
+
+/// Task-level timephased progress: per day of done work, the percent of the duration done.
+fn task_progress(out: &mut String, cals: &Calendars, i: usize, uid: usize, dur: Wm, s: &TaskSchedule, pct: u32) {
+    if let Some(stop) = stop(cals, i, dur, s, pct) {
+        for (a, b, m) in days(cals, i, s.start, stop) {
+            timephased(out, cals, 11, uid, (a, b), 2, &(m * 100 / dur).to_string());
+        }
+    }
+}
+
+/// The unassigned placeholder assignment (resource -65535) Project keeps for a task without
+/// resources. It carries the actual and remaining work per day; without it Project re-spreads a
+/// rescheduled split and finishes a day late (found by bisecting the round trip).
+#[allow(clippy::too_many_arguments)]
+fn placeholder_assignment(out: &mut String, cals: &Calendars, uid: usize, i: usize, task_uid: i64, dur: Wm, s: &TaskSchedule, pct: u32) {
+    let at = |x| dt(cals.clock.dt(x));
+    let done = dur * pct as Wm / 100;
+    let split = s.segments.len() > 1;
+    let _ = write!(
+        out,
+        "<Assignment><UID>{uid}</UID><TaskUID>{task_uid}</TaskUID><ResourceUID>-65535</ResourceUID>         <PercentWorkComplete>{pct}</PercentWorkComplete><ActualStart>{}</ActualStart>         <ActualWork>{}</ActualWork><Finish>{}</Finish><RemainingWork>{}</RemainingWork>         <Start>{}</Start>{}<Units>1</Units><Work>{}</Work>",
+        at(s.start),
+        duration(done),
+        at(s.finish),
+        duration(dur - done),
+        at(s.start),
+        if split { format!("<Stop>{}</Stop><Resume>{}</Resume>", at(s.segments[0].1), at(s.segments[1].0)) } else { String::new() },
+        duration(dur),
+    );
+    if let Some(stop) = stop(cals, i, dur, s, pct) {
+        for (a, b, m) in days(cals, i, s.start, stop) {
+            timephased(out, cals, 2, uid, (a, b), 1, &duration(m));
+        }
+        let rest = if split { s.segments[1].0 } else { stop };
+        for (a, b, m) in days(cals, i, rest, s.finish) {
+            timephased(out, cals, 1, uid, (a, b), 1, &duration(m));
+        }
+    }
+    out.push_str("</Assignment>");
 }
 
 /// Serializes `project` with the dates in `schedule` (from [`crate::cpm::schedule`] or
@@ -218,6 +294,9 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
                 if link.lag_elapsed { 8 } else { 7 }
             );
         }
+        if p.actual_start.is_some() && !t.summary && t.duration > 0 {
+            task_progress(&mut out, cals, i, t.uid as usize, t.duration, s, p.percent_complete);
+        }
         out.push_str("</Task>");
     }
     out.push_str("</Tasks>");
@@ -255,6 +334,14 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             at(tl.start_at(first)),
             a.units,
         );
+    }
+    let mut uid = project.assignments.len();
+    for (i, t) in project.tasks.iter().enumerate() {
+        let has_resource = project.assignments.iter().any(|a| a.task == i);
+        if t.progress.actual_start.is_some() && !t.summary && !has_resource && t.duration > 0 {
+            uid += 1;
+            placeholder_assignment(&mut out, cals, uid, i, t.uid, t.duration, &schedule[i], t.progress.percent_complete);
+        }
     }
     out.push_str("</Assignments></Project>\n");
     out

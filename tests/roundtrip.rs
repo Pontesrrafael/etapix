@@ -18,10 +18,7 @@ fn original(golden: &Path, name: &str) -> PathBuf {
 }
 
 /// Known gaps, each with the reason it is not yet reproduced.
-const KNOWN: &[(&str, &str)] = &[(
-    "B6-P8-reagendar-antes.xml",
-    "rescheduled split: Project also reads timephased % complete (TimephasedData type 11), which pjsched does not write; it then finishes one day later",
-)];
+const KNOWN: &[(&str, &str)] = &[];
 
 #[test]
 fn project_recalculates_pjsched_files_identically() {
