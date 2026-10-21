@@ -50,8 +50,8 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Covered
 
-The golden tests pass in full: the 86 leveling and CPM cases in `tests/golden.rs` and every step
-of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 131 files.
+The golden tests pass in full: the 87 leveling and CPM cases in `tests/golden.rs` and every step
+of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 132 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -113,5 +113,8 @@ of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 131 file
   summary is written as ASAP and reopening loses the effect), so it cannot travel through MSPDI.
   Project refuses every other constraint on a summary, and finish-to-finish or start-to-finish
   links into one; the reader rejects those too.
-- Leveling across different calendars. Bookings are compared as absolute stretches, so
-  overnight gaps on unusual calendars could overlap.
+- Leveling across very different calendars. With a night-shift task (ignoring its resource
+  calendar) and a day task on one resource, Project flags the resource overallocated on a day
+  basis (12h booked in an 8h day, peak still 100%) and its leveler stops on a modal dialog, so
+  the leveled result cannot be captured by automation. pjsched compares bookings in each task's
+  working time and does not reproduce that day-capacity verdict.

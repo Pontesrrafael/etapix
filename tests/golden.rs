@@ -255,6 +255,13 @@ fn leveling_assignments_ranges_and_uneven_splits() {
     ]);
 }
 
+/// A night-shift task that ignores its resource calendar next to a day task on the same resource.
+/// Leveling it makes Project stop on a modal dialog, so only the unleveled schedule is pinned.
+#[test]
+fn night_shift_task_schedule() {
+    assert_cases(&[("b16", "B16-N-noite-e-dia", None)]);
+}
+
 /// Batch 11 saved Project's leveling in the file. Clearing those delays and leveling with the
 /// same period basis must give back Project's dates; the saved file must also schedule as is.
 #[test]
