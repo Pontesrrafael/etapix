@@ -44,14 +44,14 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 | `model` | Tasks, links, constraints, resources and assignments. |
 | `cpm` | Forward and backward passes, total and free slack, critical flag. It also accepts fixed placements produced by leveling. |
 | `edit` | How Project recalculates duration, units and work when you add or remove a resource or change duration, units or work. It covers the fixed units, fixed duration and fixed work task types, with and without effort-driven scheduling. |
-| `leveling` | Serial list scheduling with the ID, Standard and Priority/Standard orders, splitting, priority 1000 and "within available slack". Each assignment occupies its resource only while it works. |
+| `leveling` | Serial list scheduling, resource by resource, of assignments (Project's default "level individual assignments") or whole tasks, with the ID, Standard and Priority/Standard orders, day/week/hour bases, splitting (also of a single uneven assignment), priority 1000, a leveling date range and "within available slack". Each assignment occupies its resource only while it works. |
 | `mspdi` | Reads MSPDI input and the results Project computed. |
 | `mspdi_write` | Writes MSPDI that Project reopens and recalculates to the same schedule. Element order follows the schema, `ProjectExternallyEdited` is 0, and `HonorConstraints` is 0, which is how Project itself writes "honor constraints" on. Tasks in progress get timephased progress, and those without resources get Project's placeholder assignment (resource -65535), which carries the actual and remaining work per day. |
 
 ## Covered
 
-The golden tests pass in full: the 81 leveling and CPM cases in `tests/golden.rs` and every step
-of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 126 files.
+The golden tests pass in full: the 86 leveling and CPM cases in `tests/golden.rs` and every step
+of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 131 files.
 
 - Progress: percent complete, actual start (it overrides links and constraints), actual finish
   (it fixes the duration), and work rescheduled past the status date (a split). Completed tasks
@@ -113,9 +113,5 @@ of the 10 edit series in `tests/edits.rs`. The round trip agrees on all 126 file
   summary is written as ASAP and reopening loses the effect), so it cannot travel through MSPDI.
   Project refuses every other constraint on a summary, and finish-to-finish or start-to-finish
   links into one; the reader rejects those too.
-- Splitting during leveling for tasks whose assignments do not cover the whole task evenly.
-- Any case where the "level individual assignments" setting changes the result. It made no
-  difference in batch 3.
 - Leveling across different calendars. Bookings are compared as absolute stretches, so
   overnight gaps on unusual calendars could overlap.
-- "Level individual assignments" and partial date ranges.

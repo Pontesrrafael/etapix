@@ -11,10 +11,16 @@ use pjsched::cpm::{self, TaskSchedule};
 use pjsched::leveling::{self, LevelOrder, LevelingOptions, PeriodBasis};
 use pjsched::mspdi::{read_project, read_results, TaskResult};
 
-const STANDARD: LevelingOptions = LevelingOptions { order: LevelOrder::Standard, within_slack: false, basis: PeriodBasis::Day };
+const STANDARD: LevelingOptions = LevelingOptions {
+    order: LevelOrder::Standard,
+    within_slack: false,
+    basis: PeriodBasis::Day,
+    individual_assignments: true,
+    range: None,
+};
 
 fn opts(order: LevelOrder, within_slack: bool) -> LevelingOptions {
-    LevelingOptions { order, within_slack, basis: PeriodBasis::Day }
+    LevelingOptions { order, within_slack, ..STANDARD }
 }
 
 fn diff(case: &str, clock: &Clock, got: &[TaskSchedule], want: &[TaskResult]) -> Vec<String> {
@@ -234,6 +240,21 @@ fn monthly_and_yearly_exceptions() {
     assert_cases(&cases);
 }
 
+#[test]
+fn leveling_assignments_ranges_and_uneven_splits() {
+    let range = |a: &str, b: &str| {
+        let p = |d: &str| chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M").unwrap();
+        Some((p(a), p(b)))
+    };
+    assert_cases(&[
+        ("b15", "B15-I-indiv", Some(STANDARD)),
+        ("b15", "B15-I-tarefa", Some(LevelingOptions { individual_assignments: false, ..STANDARD })),
+        ("b15", "B15-D-intervalo", Some(LevelingOptions { range: range("2026-11-13T00:00", "2026-11-20T00:00"), ..STANDARD })),
+        ("b15", "B15-D-tudo", Some(STANDARD)),
+        ("b15", "B15-S-divisao-desigual", Some(STANDARD)),
+    ]);
+}
+
 /// Batch 11 saved Project's leveling in the file. Clearing those delays and leveling with the
 /// same period basis must give back Project's dates; the saved file must also schedule as is.
 #[test]
@@ -246,7 +267,7 @@ fn leveling_period_basis() {
         let mut project = read_project(&xml).unwrap();
         project.tasks.iter_mut().for_each(|t| t.leveling_delay = 0);
         let cals = Calendars::new(&project).unwrap();
-        let options = LevelingOptions { order: LevelOrder::Standard, within_slack: false, basis };
+        let options = LevelingOptions { basis, ..STANDARD };
         let leveled = leveling::level(&project, &cals, options).unwrap();
         problems.extend(diff(&format!("{case} (nivelado do zero)"), &cals.clock, &leveled, &read_results(&xml).unwrap()));
     }
