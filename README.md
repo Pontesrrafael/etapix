@@ -2,6 +2,8 @@
 
 **Instalador do Etapix:** baixe `Etapix-0.1.0.zip` em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), descompacte e execute `etapix-setup-0.1.0.exe`.
 
+**Etapix no Claude e no Codex:** baixe `Etapix-Claude-Codex-0.1.0.zip` na mesma página, descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
+
 A clean-room scheduling engine (critical path and resource leveling) written in Rust. Its behavior
 comes from black-box experiments against Microsoft Project 16.0.20430. No vendor code was
 decompiled or consulted.
@@ -70,6 +72,19 @@ Sans (headings and wordmark), both under the SIL Open Font License 1.1 (licences
 
 To review the layout without touching the screen, run the app with `ETAPIX_SNAPSHOT_DIR` set to
 a folder: it opens each ribbon tab, saves a PNG of the window for each, and quits.
+
+## Claude and Codex connector (`integrations/`)
+
+`etapix-mcp` (`app/src/bin/etapix-mcp.rs`) is a Model Context Protocol server over stdio. Its
+tools (`criar_projeto`, `ler_projeto`, `adicionar_tarefas`, `editar_tarefa`, `excluir_tarefa`,
+`nivelar_recursos`, `definir_linha_de_base`, `salvar_como`) open a project file, apply the same
+operations as the app and save it back, so an assistant can build and change schedules that open
+in Etapix and Project. `integrations/skill/etapix/SKILL.md` tells the assistant how to use them.
+
+`toolsuild-integrations.ps1` packs `dist\etapix.mcpb` (Claude Desktop extension),
+`dist\etapix-skill.zip` (for claude.ai) and `dist\Etapix-Claude-Codex-<version>.zip`, whose
+`instalar.cmd` registers the server and the skill in Claude Code and Codex and opens the `.mcpb`
+in Claude Desktop.
 
 `etapix-setup` is a per-user installer with the app built in: it installs to
 `%LOCALAPPDATA%\Programs\etapix` without admin rights, adds a Start Menu shortcut and an entry in

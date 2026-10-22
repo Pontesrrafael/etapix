@@ -1,0 +1,34 @@
+Etapix para Claude e Codex 0.1.0
+
+Este pacote deixa o Claude e o Codex criarem e editarem cronogramas do Etapix e do
+Microsoft Project (.xml e .mpp).
+
+COMO INSTALAR
+1. Descompacte este arquivo .zip (botão direito > Extrair Tudo).
+2. Dê dois cliques em instalar.cmd.
+
+O instalador encontra sozinho o que você usa nesta máquina:
+- Claude Code: registra o conector e instala a skill.
+- Codex: registra o conector em .codex\config.toml e instala a skill.
+- Claude Desktop: abre a janela de instalação do conector; clique em Instalar.
+  (Também dá para só dar dois cliques em etapix.mcpb.)
+
+Depois, reinicie o Claude ou o Codex e peça, por exemplo:
+  "Crie um cronograma de implantação começando em 02/11/2026 em C:\Projetos\implantacao.mpp"
+
+CLAUDE.AI (NAVEGADOR)
+A skill se instala em Configurações > Capacidades > Skills > Enviar skill, escolhendo
+etapix-skill.zip. O conector precisa do Claude Desktop, do Claude Code ou do Codex.
+
+ARQUIVOS DO PACOTE
+  instalar.cmd       instalador (dois cliques)
+  etapix.mcpb        conector para o Claude Desktop (dois cliques)
+  etapix-skill.zip   skill para enviar ao claude.ai
+  etapix-mcp.exe     o conector em si
+  skill\etapix\      a skill (SKILL.md)
+
+Arquivos .mpp são lidos e gravados pelo Microsoft Project instalado na máquina.
+Arquivos .xml funcionam sem ele.
+
+Se o Windows mostrar "O Windows protegeu o computador", clique em "Mais informações" e
+depois em "Executar assim mesmo" (o pacote é interno e não tem assinatura digital).

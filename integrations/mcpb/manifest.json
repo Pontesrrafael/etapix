@@ -1,0 +1,30 @@
+{
+  "manifest_version": "0.2",
+  "name": "etapix",
+  "display_name": "Etapix",
+  "version": "0.1.0",
+  "description": "Crie e edite cronogramas do Etapix e do Microsoft Project (.xml e .mpp): tarefas, estrutura, vínculos, recursos, caminho crítico, nivelamento e linha de base.",
+  "long_description": "Conector do Etapix para o Claude. Agenda os projetos com o mesmo motor do Etapix e salva arquivos que abrem no Etapix e no Microsoft Project. Arquivos .mpp usam o Microsoft Project instalado na máquina; arquivos .xml funcionam sem ele.",
+  "author": { "name": "rafael.pontes" },
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/etapix-mcp.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/etapix-mcp.exe",
+      "args": []
+    }
+  },
+  "tools": [
+    { "name": "criar_projeto", "description": "Cria um projeto vazio (.xml ou .mpp)." },
+    { "name": "ler_projeto", "description": "Lê tarefas, datas, folgas e caminho crítico." },
+    { "name": "adicionar_tarefas", "description": "Acrescenta tarefas com estrutura, vínculos e recursos." },
+    { "name": "editar_tarefa", "description": "Altera uma tarefa e reagenda." },
+    { "name": "excluir_tarefa", "description": "Exclui uma tarefa." },
+    { "name": "nivelar_recursos", "description": "Nivela ou limpa o nivelamento dos recursos." },
+    { "name": "definir_linha_de_base", "description": "Salva a linha de base." },
+    { "name": "salvar_como", "description": "Salva em outro caminho ou formato." }
+  ],
+  "compatibility": { "platforms": ["win32"] },
+  "license": "MIT"
+}
