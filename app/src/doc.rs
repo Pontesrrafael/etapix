@@ -325,6 +325,12 @@ impl Doc {
         }
     }
 
+    /// Changes so far (see `begin`); tests use it to check that something left the project alone.
+    #[cfg(test)]
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }

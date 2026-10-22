@@ -189,6 +189,8 @@ fn scripted_user_types_tasks_edits_and_undoes() {
     setup_style(&ctx, None);
     let mut app = App::new(None);
     app.headless = true;
+    // The first-visit strip would move the grid down; this test clicks at fixed places.
+    app.suggest = false;
     let mut t = 0.0;
     let mut frame = |app: &mut App, events: Vec<Event>| {
         t += 0.1;
@@ -237,4 +239,76 @@ fn scripted_user_types_tasks_edits_and_undoes() {
     assert_eq!(app.doc.days(1), 1.0);
     frame(&mut app, key(Key::Y, Modifiers::CTRL));
     assert_eq!(app.doc.days(1), 3.0);
+}
+
+/// Runs a tour to the end with the balloon's keys and checks it changed nothing.
+fn run_tour(app: &mut App, ctx: &egui::Context, id: &'static str, t: &mut f64) -> usize {
+    let before = (app.doc.version(), app.doc.dirty, app.doc.project.tasks.len());
+    app.start_tour(id);
+    let mut steps = 0;
+    for _ in 0..200 {
+        if !app.tour_active() {
+            break;
+        }
+        *t += 0.1;
+        let _ = ctx.run(input(vec![], *t), |ctx| app.frame_ui(ctx));
+        let _ = ctx.run(input(vec![], *t + 0.01), |ctx| app.frame_ui(ctx));
+        let _ = ctx.run(input(vec![], *t + 0.02), |ctx| app.frame_ui(ctx));
+        if app.tour_active() {
+            steps += 1;
+            let ev = vec![Event::Key { key: Key::ArrowRight, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::default() }];
+            let _ = ctx.run(input(ev, *t + 0.05), |ctx| app.frame_ui(ctx));
+        }
+    }
+    assert!(!app.tour_active(), "tour {id} did not finish");
+    assert_eq!((app.doc.version(), app.doc.dirty, app.doc.project.tasks.len()), before, "tour {id} changed the project");
+    steps
+}
+
+#[test]
+fn every_tour_runs_to_the_end_without_touching_the_project() {
+    let ctx = egui::Context::default();
+    setup_style(&ctx, None);
+    let path = golden("b10/B10-L2-SS-do-resumo-antes.xml");
+    let mut app = App::new(Some(path));
+    app.headless = true;
+    let mut t = 0.0;
+    let _ = ctx.run(input(vec![], t), |ctx| app.frame_ui(ctx));
+    for id in crate::help::ids() {
+        let tour = crate::help::content::tutorial(id).unwrap().tour.len();
+        let shown = run_tour(&mut app, &ctx, id, &mut t);
+        // Tours with steps show at least one; the others open the step-by-step instead.
+        if tour > 0 {
+            assert!(shown >= 1, "tour {id} showed nothing");
+        } else {
+            assert_eq!(app.help.panel, Some(id));
+        }
+    }
+    // Escape ends a tour at once.
+    app.start_tour("tarefa");
+    let _ = ctx.run(input(vec![], t + 1.0), |ctx| app.frame_ui(ctx));
+    let esc = vec![Event::Key { key: Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::default() }];
+    let _ = ctx.run(input(esc, t + 1.1), |ctx| app.frame_ui(ctx));
+    assert!(!app.tour_active());
+}
+
+#[test]
+fn help_panel_and_catalog_open_from_every_tab() {
+    let ctx = egui::Context::default();
+    setup_style(&ctx, None);
+    let mut app = App::new(None);
+    app.headless = true;
+    let mut t = 0.0;
+    for tab in [Tab::Task, Tab::Resource, Tab::Report, Tab::Project, Tab::View, Tab::Format, Tab::Help] {
+        app.tab = tab;
+        app.run(super::Act::HowTo);
+        t += 0.1;
+        let _ = ctx.run(input(vec![], t), |ctx| app.frame_ui(ctx));
+        assert_eq!(app.help.panel, Some(crate::help::content::for_tab(tab).id));
+        // Every procedure of the panel is drawn without trouble, and Como usar is on the tab.
+        let _ = ctx.run(input(vec![], t + 0.01), |ctx| app.frame_ui(ctx));
+    }
+    app.run(super::Act::HelpCenter);
+    let _ = ctx.run(input(vec![], t + 0.2), |ctx| app.frame_ui(ctx));
+    assert!(app.help.catalog);
 }

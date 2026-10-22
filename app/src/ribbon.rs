@@ -31,11 +31,27 @@ impl App {
                     Tab::File => {}
                     Tab::Task => self.task_tab(ui, &mut acts, has, many),
                     Tab::Resource => self.resource_tab(ui, &mut acts, has),
-                    Tab::Report => report_tab(ui, &mut acts),
-                    Tab::Project => project_tab(ui, &mut acts),
+                    Tab::Report => {
+                        for (id, rect) in report_tab(ui, &mut acts) {
+                            self.target(ui, id, rect);
+                        }
+                    }
+                    Tab::Project => {
+                        for (id, rect) in project_tab(ui, &mut acts) {
+                            self.target(ui, id, rect);
+                        }
+                    }
                     Tab::View => self.view_tab(ui, &mut acts, has),
                     Tab::Format => self.format_tab(ui),
                     Tab::Help => help_tab(ui, &mut acts),
+                }
+                if !matches!(self.tab, Tab::File | Tab::Help) {
+                    let rect = group(ui, "Ajuda", |ui| {
+                        if big_button(ui, Icon::Help, "Como\nusar", true) {
+                            acts.push(Act::HowTo);
+                        }
+                    });
+                    self.target(ui, "ajuda.como_usar", rect);
                 }
             });
             super::COMPACT.with(|c| c.set(false));
@@ -80,7 +96,7 @@ impl App {
                 });
             });
         });
-        group(ui, "Cronograma", |ui| {
+        let rect = group(ui, "Cronograma", |ui| {
             column(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -116,7 +132,8 @@ impl App {
                 small_button(ui, Icon::Inactive, "Inativar", OFF);
             });
         });
-        group(ui, "Tarefas", |ui| {
+        self.target(ui, "tarefa.cronograma", rect);
+        let rect = group(ui, "Tarefas", |ui| {
             if big_button(ui, Icon::Pin, "Agendar\nManualmente", has) {
                 acts.push(Act::Manual(true));
             }
@@ -148,7 +165,8 @@ impl App {
                 small_button(ui, Icon::Mode, "Modo", OFF);
             });
         });
-        group(ui, "Inserir", |ui| {
+        self.target(ui, "tarefa.tarefas", rect);
+        let rect = group(ui, "Inserir", |ui| {
             if big_button(ui, Icon::Task, "Tarefa", true) {
                 acts.push(Act::InsertTask);
             }
@@ -162,7 +180,8 @@ impl App {
                 small_button(ui, Icon::Deliverable, "Entregável", OFF);
             });
         });
-        group(ui, "Propriedades", |ui| {
+        self.target(ui, "tarefa.inserir", rect);
+        let rect = group(ui, "Propriedades", |ui| {
             if big_button(ui, Icon::Info, "Informações", has) {
                 acts.push(Act::Info);
             }
@@ -174,6 +193,7 @@ impl App {
                 }
             });
         });
+        self.target(ui, "tarefa.propriedades", rect);
         group(ui, "Editar", |ui| {
             if big_button(ui, Icon::Scroll, "Rolar até\na Tarefa", has) {
                 acts.push(Act::ScrollTo);
@@ -194,17 +214,19 @@ impl App {
         group(ui, "Exibir", |ui| {
             big_button(ui, Icon::Team, "Organizador\nde Equipe", OFF);
         });
-        group(ui, "Atribuições", |ui| {
+        let rect = group(ui, "Atribuições", |ui| {
             if big_button(ui, Icon::Assign, "Atribuir\nRecursos", has) {
                 acts.push(Act::Assign);
             }
             big_button(ui, Icon::Pool, "Pool de\nRecursos", OFF);
         });
-        group(ui, "Inserir", |ui| {
+        self.target(ui, "recurso.atribuicoes", rect);
+        let rect = group(ui, "Inserir", |ui| {
             if big_button(ui, Icon::AddResource, "Adicionar\nRecursos", true) {
                 acts.push(Act::AddResource);
             }
         });
+        self.target(ui, "recurso.inserir", rect);
         group(ui, "Propriedades", |ui| {
             big_button(ui, Icon::Info, "Informações", OFF);
             column(ui, |ui| {
@@ -212,7 +234,7 @@ impl App {
                 small_button(ui, Icon::Details, "Detalhes", OFF);
             });
         });
-        group(ui, "Nível", |ui| {
+        let rect = group(ui, "Nível", |ui| {
             if big_button(ui, Icon::Level, "Nivelar\nSeleção", has) {
                 acts.push(Act::Level);
             }
@@ -230,6 +252,7 @@ impl App {
                 small_button(ui, Icon::NextOver, "Próxima Superalocação", OFF);
             });
         });
+        self.target(ui, "recurso.nivel", rect);
     }
 
     fn view_tab(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Act>, has: bool) {
@@ -268,7 +291,7 @@ impl App {
                 small_button(ui, Icon::Group, "[Sem Grupo]", OFF);
             });
         });
-        group(ui, "Zoom", |ui| {
+        let rect = group(ui, "Zoom", |ui| {
             column(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Escala de Tempo:");
@@ -298,7 +321,8 @@ impl App {
                 acts.push(Act::ZoomSelected);
             }
         });
-        group(ui, "Modo Divisão", |ui| {
+        self.target(ui, "exibir.zoom", rect);
+        let rect = group(ui, "Modo Divisão", |ui| {
             column(ui, |ui| {
                 let mut on = self.timeline;
                 if ui.checkbox(&mut on, "Linha do Tempo").changed() {
@@ -307,6 +331,7 @@ impl App {
                 ui.add_enabled(false, egui::Checkbox::new(&mut false, "Detalhes"));
             });
         });
+        self.target(ui, "exibir.modo_divisao", rect);
         group(ui, "Janela", |ui| {
             big_button(ui, Icon::NewWindow, "Nova\nJanela", OFF);
             column(ui, |ui| {
@@ -335,7 +360,7 @@ impl App {
                 small_button(ui, Icon::Fields, "Campos Personalizados", OFF);
             });
         });
-        group(ui, "Estilos de Barra", |ui| {
+        let rect = group(ui, "Estilos de Barra", |ui| {
             big_button(ui, Icon::Format, "Formatar", OFF);
             column(ui, |ui| {
                 ui.checkbox(&mut self.gantt_opts.critical, "Tarefas Críticas");
@@ -346,6 +371,7 @@ impl App {
                 ui.checkbox(&mut self.gantt_opts.baseline, "Linha de Base");
             });
         });
+        self.target(ui, "formato.estilos_barra", rect);
         group(ui, "Mostrar/Ocultar", |ui| {
             column(ui, |ui| {
                 ui.checkbox(&mut self.outline_numbers, "Número da Estrutura de Tópicos");
@@ -359,8 +385,8 @@ impl App {
     }
 }
 
-fn report_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
-    group(ui, "Exibir Relatórios", |ui| {
+fn report_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egui::Rect)> {
+    let reports = group(ui, "Exibir Relatórios", |ui| {
         for (icon, label, report) in [
             (Icon::Dashboard, "Painéis", Report::Dashboard),
             (Icon::Team, "Recursos", Report::Resources),
@@ -381,16 +407,17 @@ fn report_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     group(ui, "Exportar", |ui| {
         big_button(ui, Icon::Export, "Relatórios\nVisuais", OFF);
     });
+    vec![("relatorio.exibir", reports)]
 }
 
-fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egui::Rect)> {
     group(ui, "Inserir", |ui| {
         big_button(ui, Icon::Subproject, "Subprojeto", OFF);
     });
     group(ui, "Suplementos", |ui| {
         big_button(ui, Icon::AddIn, "Obter\nSuplementos", OFF);
     });
-    group(ui, "Propriedades", |ui| {
+    let properties = group(ui, "Propriedades", |ui| {
         if big_button(ui, Icon::Info, "Informações\ndo Projeto", true) {
             acts.push(Act::ProjectInfo);
         }
@@ -401,7 +428,7 @@ fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             small_button(ui, Icon::WorkTime, "Alterar Período de Trabalho", OFF);
         });
     });
-    group(ui, "Cronograma", |ui| {
+    let schedule = group(ui, "Cronograma", |ui| {
         if big_button(ui, Icon::Calc, "Calcular\nProjeto", true) {
             acts.push(Act::Calc);
         }
@@ -421,11 +448,23 @@ fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     group(ui, "Revisão", |ui| {
         big_button(ui, Icon::Spelling, "Ortografia", OFF);
     });
+    vec![("projeto.propriedades", properties), ("projeto.cronograma", schedule)]
 }
 
 fn help_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     group(ui, "Ajuda", |ui| {
-        if big_button(ui, Icon::Help, "Sobre o\nEtapix", true) {
+        if big_button(ui, Icon::Dashboard, "Central de\nAjuda", true) {
+            acts.push(Act::HelpCenter);
+        }
+        if big_button(ui, Icon::Help, "Como usar\na Grade", true) {
+            acts.push(Act::HowTo);
+        }
+        if big_button(ui, Icon::Gantt, "Fazer o\nTour", true) {
+            acts.push(Act::Tour("grade"));
+        }
+    });
+    group(ui, "Sobre", |ui| {
+        if big_button(ui, Icon::Intro, "Sobre o\nEtapix", true) {
             acts.push(Act::About);
         }
     });

@@ -5,9 +5,10 @@ Finalidade: orientar a implementação de ajuda contextual, manual e tours guiad
 Uso: especificação para quem desenvolve o Etapix (pessoas ou agentes). Segue o formato do
 "Guia genérico de tutoriais para aplicações", preenchido com o que o Etapix é e faz hoje.
 
-Este documento descreve o que deve ser construído. Na versão 0.1.0, o Etapix ainda não tem
-central de ajuda, painel **Como usar** nem tour guiado. A única ajuda existente é **Ajuda >
-Sobre o Etapix** e as dicas que aparecem ao passar o mouse sobre os botões desativados.
+Implementado no Etapix 0.1.0: Central de Ajuda, painel **Como usar** em cada aba e na grade,
+tour guiado da grade e das abas Tarefa, Recurso, Projeto, Exibir, Formato e Relatório, e a
+sugestão na primeira visita. O código está em `app/src/help/` (`content.rs` tem todo o texto).
+A seção 10 diz o que foi verificado e a seção **Pendências**, o que falta.
 
 ## 1. Configuração da aplicação
 
@@ -568,26 +569,38 @@ App. Nenhum texto de conteúdo é interpretado como comando.
 
 ## 10. Critérios de aceitação
 
-Nada abaixo foi implementado ainda: todos os itens estão em aberto.
+Situação em 22/10/2026. "Teste" indica um teste automático em `app/src/monkey_tests.rs`;
+"imagem" indica conferência pelo modo de captura (`ETAPIX_SNAPSHOT_DIR`).
 
-- [ ] Grade, Arquivo e cada aba da faixa de opções têm **Como usar**.
-- [ ] A Central de Ajuda abre a aba e a seção corretas.
-- [ ] Os procedimentos dizem ação, confirmação e resultado esperado, e foram conferidos contra a
-      interface da versão.
-- [ ] O tour da grade e o de cada aba vão do início ao fim e podem ser refeitos.
-- [ ] Anterior, Próximo, Pular e Concluir funcionam em cada etapa.
-- [ ] Projeto vazio, faixa compacta e alvo fora da tela não travam o tour nem deixam o contador
-      errado.
-- [ ] A troca de aba acontece antes de procurar o alvo.
-- [ ] Rolar a grade ou a faixa e redimensionar a janela mantêm destaque e balão alinhados.
-- [ ] Teclado, Escape e retorno do foco conferidos.
-- [ ] Janela de 1024 × 600, zoom do Windows a 150% e nomes longos não cortam o conteúdo.
-- [ ] O cartão de `.mpp` respeita Windows e Linux.
-- [ ] Sugestão, dispensa e conclusão respeitam a versão e ficam por usuário.
-- [ ] O tour não altera o projeto: teste automático em `monkey_tests.rs` roda o tour inteiro e
-      confere que o documento não mudou.
-- [ ] O usuário simulado de `monkey_tests.rs` também clica no catálogo, no painel e no tour, sem
-      travar.
+- [x] Grade, Arquivo e cada aba da faixa de opções têm **Como usar** (teste
+      `help_panel_and_catalog_open_from_every_tab`; Arquivo pelo catálogo).
+- [x] A Central de Ajuda abre a aba e a seção corretas (**Ir para** troca a aba; **Como usar**
+      abre o procedimento do cartão; imagem).
+- [x] Os procedimentos dizem ação, confirmação e resultado esperado. Os textos foram escritos a
+      partir do comportamento desta versão; falta a revisão do responsável.
+- [x] Os tours da grade e de cada aba vão do início ao fim e podem ser refeitos (teste
+      `every_tour_runs_to_the_end_without_touching_the_project`).
+- [x] Próximo (seta →) e Concluir levam cada tour até o fim (teste); Anterior, Próximo e Pular
+      tour aparecem no balão (imagem). Anterior desativado no primeiro passo e o clique em cada
+      botão: só no código, sem teste.
+- [x] Alvo ausente não trava o tour: com a coluna Predecessoras fora da tela, o tour da grade
+      pula esse passo e segue (teste). O contador desconta os passos pulados (código; não
+      conferido em imagem). Projeto vazio: a linha vazia existe sempre.
+- [x] A troca de aba acontece antes de procurar o alvo (o tour espera até dois quadros).
+- [ ] Rolar até o alvo: não implementado. Um alvo fora da área visível é pulado (`skip`) ou o
+      passo aparece no centro (`center`), em vez de a grade ou a faixa rolarem até ele.
+- [x] Escape encerra o tour a qualquer momento (teste); Escape fecha o painel quando não há
+      célula em edição.
+- [ ] Foco do teclado no painel e no balão e retorno do foco ao botão: não verificado.
+- [ ] Janela de 1024 × 600 e zoom do Windows a 150%: não verificado. Abaixo de 900 px de largura o
+      painel vira janela flutuante (código), sem teste em tela.
+- [x] O cartão de `.mpp` muda o texto no Linux (código; o Linux compila e roda os testes no
+      GitHub).
+- [x] Sugestão, dispensa e conclusão ficam por usuário e por versão (chaves `tour.<id>` e
+      `ajuda_sugerir`); os testes usam um arquivo de configurações próprio.
+- [x] O tour não altera o projeto: o teste roda todos os tours e confere que nada mudou.
+- [x] O usuário simulado (32.000 ações na última bateria) também esbarra na sugestão, no botão
+      **?** da grade, em **Como usar** e no tour, sem travar.
 - [ ] O responsável revisou o conteúdo.
 
 ## 11. Manutenção e indicadores
@@ -635,9 +648,12 @@ Português claro e direto, com os nomes exatos da interface do Etapix.
 
 ## Pendências
 
-- Definir o responsável pela revisão do conteúdo.
-- Implementar as seções 3 a 9.
-- Rodar e registrar os critérios da seção 10.
+- Definir o responsável pela revisão do conteúdo e fazer a revisão.
+- Rolar a grade ou a faixa até um alvo fora da tela, em vez de pulá-lo.
+- Foco do teclado e rótulos acessíveis (AccessKit) no painel e no balão.
+- Conferir janela pequena e zoom do Windows em tela real.
+- Pausar o tour quando um menu (Mover, Escala de Tempo) ou uma janela se abrir: hoje o véu
+  simplesmente bloqueia o fundo.
 
 ## Pontos de melhoria
 

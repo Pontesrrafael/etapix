@@ -9,6 +9,7 @@ mod doc;
 mod fmt;
 mod fonts;
 mod gantt;
+mod help;
 mod icons;
 /// The Etapix mark and palette.
 mod logo;
@@ -281,6 +282,10 @@ enum Act {
     About,
     Undo,
     Redo,
+    /// Como usar for the current tab.
+    HowTo,
+    HelpCenter,
+    Tour(&'static str),
 }
 
 /// What waits for "Deseja salvar as alterações?".
@@ -350,6 +355,9 @@ struct App {
     closing: bool,
     /// Commands from the quick access toolbar, run with the frame's other actions.
     quick: Vec<Act>,
+    help: help::Help,
+    /// The first-visit suggestion (off in scripted tests, which click at fixed places).
+    suggest: bool,
 }
 
 impl App {
@@ -401,6 +409,8 @@ impl App {
             confirm: None,
             closing: false,
             quick: Vec::new(),
+            help: help::Help::default(),
+            suggest: true,
         }
     }
 
@@ -746,6 +756,22 @@ impl App {
                 Ok(())
             }
             Act::Undo | Act::Redo => Ok(()),
+            Act::HowTo => {
+                let t = help::content::for_tab(self.tab);
+                self.open_help(t.id, 0);
+                Ok(())
+            }
+            Act::HelpCenter => {
+                self.help.catalog = true;
+                if self.tab == Tab::File {
+                    self.tab = Tab::Task;
+                }
+                Ok(())
+            }
+            Act::Tour(id) => {
+                self.start_tour(id);
+                Ok(())
+            }
         };
         self.report(r);
     }
@@ -929,7 +955,7 @@ thread_local! {
 }
 
 /// A ribbon group: its buttons on top, its name underneath, a separator after it.
-fn group(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
+fn group(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) -> Rect {
     let font = FontId::proportional(11.0);
     let title = ui.painter().layout_no_wrap(name.to_string(), font, Color32::from_gray(100));
     let buttons = ui.horizontal_top(|ui| {
@@ -942,6 +968,7 @@ fn group(ui: &mut egui::Ui, name: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.painter().galley(Pos2::new(r.center().x - title.size().x / 2.0, r.top() + 76.0), title, Color32::from_gray(100));
     let (rect, _) = ui.allocate_exact_size(Vec2::new(9.0, 88.0), Sense::hover());
     ui.painter().line_segment([Pos2::new(rect.center().x, rect.top() + 4.0), Pos2::new(rect.center().x, rect.bottom() - 4.0)], Stroke::new(1.0_f32, Color32::from_gray(205)));
+    Rect::from_min_max(r.min, Pos2::new(r.right(), r.top() + 90.0))
 }
 
 fn column(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
@@ -967,6 +994,7 @@ impl App {
             wordmark(ui.painter(), Pos2::new(rect.left() + 2.0, rect.center().y), 15.0, Color32::WHITE);
             // Quick access toolbar: Salvar, Desfazer, Refazer (Project keeps them in the title bar).
             ui.add_space(4.0);
+            let qat_left = ui.cursor().left();
             for (icon, tip, act, enabled) in [
                 (Icon::Save, "Salvar (Ctrl+S)", Act::Save, true),
                 (Icon::Undo, "Desfazer (Ctrl+Z)", Act::Undo, self.doc.can_undo()),
@@ -984,6 +1012,8 @@ impl App {
                     self.quick.push(act);
                 }
             }
+            let qat = Rect::from_min_max(Pos2::new(qat_left, ui.max_rect().top()), Pos2::new(ui.cursor().left(), ui.max_rect().top() + 26.0));
+            self.target(ui, "acesso_rapido", qat);
             ui.add_space(6.0);
             for (tab, name) in TABS {
                 let galley = ui.painter().layout_no_wrap(name.to_string(), font(HEADING_SEMIBOLD, 13.0), Color32::WHITE);
@@ -1093,7 +1123,11 @@ impl App {
                     acts.push(Act::Open);
                 }
             });
-            ui.add_space(24.0);
+            ui.add_space(16.0);
+            if ui.add(egui::Button::new(egui::RichText::new("?  Aprender a usar o Etapix (Central de Ajuda)").size(14.0))).clicked() {
+                acts.push(Act::HelpCenter);
+            }
+            ui.add_space(12.0);
             ui.label(egui::RichText::new("Os arquivos .mpp são lidos e gravados pelo Microsoft Project instalado nesta máquina.").color(Color32::from_gray(110)));
         });
         acts
@@ -1328,6 +1362,13 @@ impl App {
     }
 
     fn keyboard(&mut self, ctx: &egui::Context, acts: &mut Vec<Act>, was_editing: bool) {
+        if self.tour_active() {
+            return;
+        }
+        if !was_editing && self.editing.is_none() && self.help.panel.is_some() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.help.panel = None;
+            return;
+        }
         if was_editing || self.editing.is_some() || ctx.memory(|m| m.focused().is_some()) {
             return;
         }
@@ -1404,6 +1445,28 @@ impl App {
             x += w;
         }
         p.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0_f32, Color32::from_gray(170)));
+        // The "?" in the corner opens the grid's Como usar.
+        let (nx0, nw0) = self.col_x(Col::Num);
+        let corner = Rect::from_min_size(Pos2::new(left + nx0, head.top()), Vec2::new(nw0, HEAD));
+        if help::corner_button(ui, corner).clicked() {
+            self.open_help("grade", 0);
+        }
+        for (col, id) in [(Col::Dur, "grade.duracao"), (Col::Pred, "grade.predecessoras")] {
+            let (cx, cw) = self.col_x(col);
+            let r = Rect::from_min_size(Pos2::new(left + cx, head.top()), Vec2::new(cw, HEAD));
+            let r = r.intersect(area);
+            if r.width() >= cw * 0.6 {
+                self.target(ui, id, r);
+            }
+        }
+        {
+            let (cx, cw) = self.col_x(Col::Name);
+            let y = body.top() + n as f32 * self.row_h - self.scroll_y;
+            let r = Rect::from_min_size(Pos2::new(left + cx, y), Vec2::new(cw, self.row_h));
+            if body.contains_rect(r) {
+                self.target(ui, "grade.linha_vazia", r);
+            }
+        }
 
         // Rows: the tasks, then empty rows to type into.
         let visible = (body.height() / self.row_h).ceil() as usize + 1;
@@ -1595,6 +1658,7 @@ impl App {
     }
 
     fn chart(&mut self, ui: &mut egui::Ui, area: Rect) {
+        self.target(ui, "gantt", area);
         let head = Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + HEAD));
         let body = Rect::from_min_max(Pos2::new(area.left(), head.bottom()), area.max);
         let probe = gantt::Scale::new(&self.doc, self.day, 0.0);
@@ -1834,11 +1898,35 @@ impl App {
         ];
         let (Some((step, frames, asked)), Some(dir)) = (self.snap, snapshot::dir()) else { return };
         ctx.request_repaint();
-        let Some(&(tab, name)) = STEPS.get(step) else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
+        // After the tabs: the help panel, the Central de Ajuda and a tour step.
+        const EXTRA: [&str; 3] = ["ajuda-painel", "ajuda-central", "ajuda-tour"];
+        let (tab, name) = match STEPS.get(step) {
+            Some(&s) => s,
+            None => match EXTRA.get(step - STEPS.len()) {
+                Some(&name) => (Tab::Task, name),
+                None => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    return;
+                }
+            },
         };
-        self.tab = tab;
+        if frames == 0 {
+            self.help.panel = None;
+            self.help.catalog = false;
+            self.help.tour = None;
+            match name {
+                "ajuda-painel" => self.open_help("tarefa", 0),
+                "ajuda-central" => self.help.catalog = true,
+                "ajuda-tour" => {
+                    self.start_tour("grade");
+                    self.tour_next();
+                }
+                _ => {}
+            }
+        }
+        if self.help.tour.is_none() {
+            self.tab = tab;
+        }
         let image = ctx.input(|i| {
             i.events.iter().find_map(|e| match e {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
@@ -1869,6 +1957,7 @@ impl eframe::App for App {
 impl App {
     /// One frame of the whole interface (also driven by the user-simulation tests).
     fn frame_ui(&mut self, ctx: &egui::Context) {
+        self.help_frame_start();
         self.snapshot_step(ctx);
         if ctx.input(|i| i.viewport().close_requested()) && self.doc.dirty && !self.closing && self.snap.is_none() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1886,6 +1975,9 @@ impl App {
                 .exact_height(104.0)
                 .frame(egui::Frame::none().fill(RIBBON_BG).stroke(Stroke::new(1.0_f32, Color32::from_gray(210))))
                 .show(ctx, |ui| acts.extend(self.ribbon(ui)));
+            if self.suggest {
+                self.help_banner(ctx);
+            }
             if self.timeline {
                 egui::TopBottomPanel::top("timeline").exact_height(64.0).frame(egui::Frame::none()).show(ctx, |ui| self.timeline_strip(ui));
             }
@@ -1893,10 +1985,13 @@ impl App {
                 .exact_height(24.0)
                 .frame(egui::Frame::none().fill(RIBBON_BG).inner_margin(egui::Margin::symmetric(8.0, 2.0)))
                 .show(ctx, |ui| self.status_bar(ui, &mut acts));
+            self.help_panel(ctx);
             egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::WHITE)).show(ctx, |ui| self.central(ui));
             self.windows(ctx);
+            self.help_catalog(ctx);
             self.keyboard(ctx, &mut acts, was_editing);
         }
+        self.help_tour(ctx);
         acts.append(&mut self.quick);
         for act in acts {
             self.run(act);
