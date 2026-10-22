@@ -1,8 +1,17 @@
-# pjsched
+# Etapix
 
-**Instalador do Etapix:** baixe [`Etapix-Instalador.exe`](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe), nesta pasta, e dê dois cliques. Ele instala o Etapix e o conector para o Claude e o Codex. (Também está em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), como `Etapix-0.1.0.zip`.)
+## Instalar o Etapix
 
-**Só o conector, sem o app:** baixe `Etapix-Claude-Codex-0.1.0.zip` em Releases, descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
+| Sistema | Instalador | Como instalar |
+|---|---|---|
+| **Windows** 10 ou 11 | [⬇ Etapix-Instalador.exe](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe) | Baixe e dê dois cliques. |
+| **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
+
+Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` precisam do Microsoft Project e por isso só abrem no Windows; no Linux, use Project XML (`.xml`).
+
+Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
+
+## pjsched
 
 A clean-room scheduling engine (critical path and resource leveling) written in Rust. Its behavior
 comes from black-box experiments against Microsoft Project 16.0.20430. No vendor code was
