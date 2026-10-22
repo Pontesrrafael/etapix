@@ -6,6 +6,7 @@
 
 mod doc;
 mod fmt;
+mod fonts;
 mod gantt;
 mod icons;
 /// The Etapix mark and palette.
@@ -30,8 +31,9 @@ fn main() -> eframe::Result {
         "etapix",
         options,
         Box::new(move |cc| {
-            setup_style(&cc.egui_ctx);
-            Ok(Box::new(App::new(path)))
+            let mut app = App::new(path);
+            app.apply_font(&cc.egui_ctx);
+            Ok(Box::new(app))
         }),
     )
 }
@@ -46,8 +48,10 @@ const FONTS: [(&str, &[u8]); 5] = [
     ("jakarta-bold", include_bytes!("../assets/fonts/PlusJakartaSans-Bold.ttf")),
 ];
 
-/// Light theme and the brand fonts. Segoe UI, when installed, backs them up for symbols they lack.
-fn setup_style(ctx: &egui::Context) {
+/// Light theme and the brand fonts. A font installed on the machine, when one is picked, takes
+/// the place of Inter for the interface text (its bold face for bold text). Segoe UI backs them
+/// up for symbols they lack.
+fn setup_style(ctx: &egui::Context, chosen: Option<&fonts::Family>) {
     ctx.set_visuals(egui::Visuals::light());
     let mut fonts = egui::FontDefinitions::default();
     for (name, bytes) in FONTS {
@@ -59,14 +63,28 @@ fn setup_style(ctx: &egui::Context) {
         fonts.font_data.insert("segoe".into(), egui::FontData::from_owned(bytes));
         segoe.push("segoe".to_string());
     }
+    let (mut regular, mut bold) = (None, None);
+    if let Some(f) = chosen {
+        // Only faces the glyph rasterizer accepts: a font it cannot read would stop the app.
+        let readable = |bytes: &Vec<u8>| ab_glyph::FontRef::try_from_slice(bytes).is_ok();
+        if let Some(bytes) = std::fs::read(&f.regular).ok().filter(readable) {
+            fonts.font_data.insert("chosen".into(), egui::FontData::from_owned(bytes));
+            regular = Some("chosen");
+            bold = Some("chosen");
+        }
+        if let Some(b) = f.bold.as_ref().and_then(|b| std::fs::read(b).ok()).filter(|_| regular.is_some()).filter(readable) {
+            fonts.font_data.insert("chosen-bold".into(), egui::FontData::from_owned(b));
+            bold = Some("chosen-bold");
+        }
+    }
     for (family, first) in [
-        (egui::FontFamily::Proportional, "inter"),
-        (egui::FontFamily::Name(MEDIUM.into()), "inter-medium"),
-        (egui::FontFamily::Name(SEMIBOLD.into()), "inter-semibold"),
-        (egui::FontFamily::Name(HEADING.into()), "jakarta-bold"),
-        (egui::FontFamily::Name(HEADING_SEMIBOLD.into()), "jakarta-semibold"),
+        (egui::FontFamily::Proportional, regular.into_iter().chain(["inter"]).collect::<Vec<_>>()),
+        (egui::FontFamily::Name(MEDIUM.into()), regular.into_iter().chain(["inter-medium"]).collect()),
+        (egui::FontFamily::Name(SEMIBOLD.into()), bold.into_iter().chain(["inter-semibold"]).collect()),
+        (egui::FontFamily::Name(HEADING.into()), vec!["jakarta-bold"]),
+        (egui::FontFamily::Name(HEADING_SEMIBOLD.into()), vec!["jakarta-semibold"]),
     ] {
-        let chain = std::iter::once(first.to_string()).chain(segoe.iter().cloned()).chain(fallback.iter().cloned()).collect();
+        let chain = first.into_iter().map(String::from).chain(segoe.iter().cloned()).chain(fallback.iter().cloned()).collect();
         fonts.families.insert(family, chain);
     }
     ctx.set_fonts(fonts);
@@ -207,6 +225,11 @@ struct App {
     /// The chart's last laid-out width, used by "Projeto Inteiro".
     chart_w: f32,
     logo: Option<egui::TextureHandle>,
+    /// Fonts installed on the machine, listed the first time the picker needs them.
+    installed_fonts: Option<Vec<fonts::Family>>,
+    /// The picked font family ("" for Inter, the Etapix font) and the grid's text size.
+    font_name: String,
+    text_size: f32,
 }
 
 impl App {
@@ -216,6 +239,7 @@ impl App {
             Some(Err(e)) => (Doc::blank(), Some(e)),
             None => (Doc::blank(), None),
         };
+        let (font_name, text_size) = fonts::load_choice();
         App {
             doc,
             message,
@@ -236,7 +260,25 @@ impl App {
             scroll_to_start: true,
             chart_w: 700.0,
             logo: None,
+            installed_fonts: None,
+            font_name,
+            text_size,
         }
+    }
+
+    fn installed_fonts(&mut self) -> &[fonts::Family] {
+        self.installed_fonts.get_or_insert_with(fonts::installed)
+    }
+
+    /// Loads the picked font (or the Etapix font) into the interface.
+    fn apply_font(&mut self, ctx: &egui::Context) {
+        let name = self.font_name.clone();
+        let chosen = if name.is_empty() { None } else { self.installed_fonts().iter().find(|f| f.name == name).cloned() };
+        if chosen.is_none() {
+            // A font missing on this machine falls back to Inter.
+            self.font_name.clear();
+        }
+        setup_style(ctx, chosen.as_ref());
     }
 
     fn report(&mut self, r: Result<(), String>) {
@@ -673,6 +715,40 @@ impl App {
                             acts.push(Act::Whole);
                         }
                     });
+                    group(ui, "Fonte", |ui| {
+                        column(ui, |ui| {
+                            let shown = if self.font_name.is_empty() { "Inter (Etapix)".to_string() } else { self.font_name.clone() };
+                            let mut picked = None;
+                            egui::ComboBox::from_id_salt("font")
+                                .selected_text(shown)
+                                .width(190.0)
+                                .height(420.0)
+                                .show_ui(ui, |ui| {
+                                    if ui.selectable_label(self.font_name.is_empty(), "Inter (Etapix)").clicked() {
+                                        picked = Some(String::new());
+                                    }
+                                    let names: Vec<String> = self.installed_fonts().iter().map(|f| f.name.clone()).collect();
+                                    for name in names {
+                                        if ui.selectable_label(self.font_name == name, &name).clicked() {
+                                            picked = Some(name);
+                                        }
+                                    }
+                                });
+                            ui.horizontal(|ui| {
+                                ui.label("Tamanho");
+                                let mut size = self.text_size;
+                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=14.0).speed(0.2).suffix(" pt")).changed() {
+                                    self.text_size = size.round();
+                                    fonts::save_choice(&self.font_name, self.text_size);
+                                }
+                            });
+                            if let Some(name) = picked {
+                                self.font_name = name;
+                                self.apply_font(ui.ctx());
+                                fonts::save_choice(&self.font_name, self.text_size);
+                            }
+                        });
+                    });
                     group(ui, "Modo Divisão", |ui| {
                         let mut on = self.timeline;
                         if ui.checkbox(&mut on, "Linha do Tempo").changed() {
@@ -963,7 +1039,7 @@ impl App {
             let r = Rect::from_min_size(Pos2::new(x, head.top()), Vec2::new(w, HEAD));
             p.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0_f32, GRID_LINE));
             let color = if col == Col::Add { Color32::from_gray(110) } else { TEXT };
-            let galley = p.layout(title.to_string(), FontId::proportional(12.0), color, w - 6.0);
+            let galley = p.layout(title.to_string(), FontId::proportional(self.text_size), color, w - 6.0);
             let pos = if col == Col::Name { Pos2::new(r.left() + 6.0, r.center().y - galley.size().y / 2.0) } else { r.center() - galley.size() / 2.0 };
             p.galley(pos, galley, color);
             if col == Col::Ind {
@@ -996,7 +1072,7 @@ impl App {
                     continue;
                 }
                 let t = &self.doc.project.tasks[row];
-                let font = FontId::proportional(12.0);
+                let font = FontId::proportional(self.text_size);
                 match col {
                     Col::Num => {
                         pb.text(r.center(), Align2::CENTER_CENTER, t.id.to_string(), font, TEXT);
@@ -1023,7 +1099,7 @@ impl App {
                             tx += 12.0;
                         }
                         let clip = pb.with_clip_rect(r.intersect(body));
-                        let name_font = if t.summary { self::font(SEMIBOLD, 12.0) } else { font };
+                        let name_font = if t.summary { self::font(SEMIBOLD, self.text_size) } else { font };
                         clip.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &t.name, name_font, TEXT);
                     }
                     Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => {
@@ -1084,7 +1160,7 @@ impl App {
             ui.painter().rect_stroke(r, 0.0, Stroke::new(1.5_f32, GREEN));
             let mut out = None;
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(r.shrink2(Vec2::new(3.0, 1.0))), |ui| {
-                out = Some(egui::TextEdit::singleline(&mut e.text).frame(false).font(FontId::proportional(12.0)).desired_width(ew - 6.0).show(ui));
+                out = Some(egui::TextEdit::singleline(&mut e.text).frame(false).font(FontId::proportional(self.text_size)).desired_width(ew - 6.0).show(ui));
             });
             let out = out.unwrap();
             // Enter, Tab and Escape are read here directly, so a key typed before the field has
