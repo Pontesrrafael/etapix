@@ -9,7 +9,11 @@
 //! `/silent` skips every dialog (for IT deployment and tests): `etapix-setup.exe /silent`,
 //! `desinstalar.exe /uninstall /silent`.
 //!
-//! Build `etapix` in release first; this program embeds `target/release/etapix.exe`.
+//! It also installs the Etapix connector for Claude and Codex (`etapix-mcp.exe`, which registers
+//! itself in Claude Code and Codex and offers the `.mcpb` extension to Claude Desktop).
+//!
+//! Build with `toolsuild-installer.ps1`: this program embeds `target/release/etapix.exe`,
+//! `target/release/etapix-mcp.exe` and `dist/etapix.mcpb`.
 
 #![windows_subsystem = "windows"]
 
@@ -19,6 +23,8 @@ use std::process::Command;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 
 const APP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix.exe"));
+const MCP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix-mcp.exe"));
+const MCPB: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../dist/etapix.mcpb"));
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\etapix";
 
@@ -112,6 +118,9 @@ fn install() -> Result<PathBuf, String> {
     if me != uninstaller {
         std::fs::copy(&me, &uninstaller).map_err(|e| format!("{}: {e}", uninstaller.display()))?;
     }
+    for (name, bytes) in [("etapix-mcp.exe", MCP), ("etapix.mcpb", MCPB)] {
+        std::fs::write(dir.join(name), bytes).map_err(|e| format!("{name}: {e} (o Claude ou o Codex está usando o Etapix?)"))?;
+    }
     create_shortcut(&exe, &shortcut())?;
     register(&dir, &uninstaller)?;
     Ok(exe)
@@ -119,8 +128,10 @@ fn install() -> Result<PathBuf, String> {
 
 fn uninstall() -> Result<(), String> {
     let _ = std::fs::remove_file(shortcut());
-    let _ = run("reg", &["delete", UNINSTALL_KEY, "/f"]);
     let dir = install_dir();
+    // Take the connector out of Claude Code and Codex before its program goes away.
+    let _ = run(&dir.join("etapix-mcp.exe").display().to_string(), &["remover"]);
+    let _ = run("reg", &["delete", UNINSTALL_KEY, "/f"]);
     let _ = std::fs::remove_file(dir.join("etapix.exe"));
     // This program is running from the folder: a detached shell retries deleting the folder
     // (up to ~20 s) until this process has exited and released the file.
@@ -152,7 +163,9 @@ fn main() {
     }
     let question = format!(
         "Instalar o Etapix {VERSION} em\n{}?\n\nInstalação só para o seu usuário, sem administrador. O Microsoft Project \
-         instalado não é alterado.",
+         instalado não é alterado.
+
+Inclui o conector do Etapix para o Claude e o Codex.",
         install_dir().display()
     );
     if !ask(&question) {
@@ -160,6 +173,16 @@ fn main() {
     }
     match install() {
         Ok(exe) => {
+            // The connector registers itself; in silent mode Claude Desktop's dialog is skipped.
+            let mcp = install_dir().join("etapix-mcp.exe");
+            let mcpb = install_dir().join("etapix.mcpb");
+            let mut args = vec!["instalar".to_string()];
+            if !silent() {
+                args.push(mcpb.display().to_string());
+            }
+            if let Err(e) = run(&mcp.display().to_string(), &args.iter().map(String::as_str).collect::<Vec<_>>()) {
+                tell(MessageLevel::Warning, &format!("O Etapix foi instalado, mas o conector do Claude/Codex não: {e}"));
+            }
             if !silent() && ask("Etapix instalado. Ele está no Menu Iniciar.\n\nAbrir agora?") {
                 let _ = Command::new(exe).spawn();
             }

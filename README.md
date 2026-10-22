@@ -1,8 +1,8 @@
 # pjsched
 
-**Instalador do Etapix:** baixe `Etapix-0.1.0.zip` em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), descompacte e execute `etapix-setup-0.1.0.exe`.
+**Instalador do Etapix:** baixe [`Etapix-Instalador.exe`](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe), nesta pasta, e dê dois cliques. Ele instala o Etapix e o conector para o Claude e o Codex. (Também está em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), como `Etapix-0.1.0.zip`.)
 
-**Etapix no Claude e no Codex:** baixe `Etapix-Claude-Codex-0.1.0.zip` na mesma página, descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
+**Só o conector, sem o app:** baixe `Etapix-Claude-Codex-0.1.0.zip` em Releases, descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
 A clean-room scheduling engine (critical path and resource leveling) written in Rust. Its behavior
 comes from black-box experiments against Microsoft Project 16.0.20430. No vendor code was

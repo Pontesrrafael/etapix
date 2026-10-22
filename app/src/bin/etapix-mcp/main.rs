@@ -6,13 +6,14 @@
 
 // Shared with the app; the server uses only part of each.
 #[allow(dead_code)]
-#[path = "../doc.rs"]
+#[path = "../../doc.rs"]
 mod doc;
 #[allow(dead_code)]
-#[path = "../fmt.rs"]
+#[path = "../../fmt.rs"]
 mod fmt;
-#[path = "../mpp.rs"]
+#[path = "../../mpp.rs"]
 mod mpp;
+mod integrations;
 
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -22,6 +23,16 @@ use doc::Doc;
 use serde_json::{json, Value};
 
 fn main() {
+    // `instalar [extensão.mcpb]` / `remover`: register in or remove from the assistants.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(cmd) = args.first().filter(|c| *c == "instalar" || *c == "remover") {
+        let mcpb = args.get(1).map(std::path::PathBuf::from);
+        if let Err(e) = integrations::run(cmd == "instalar", mcpb.as_deref()) {
+            eprintln!("Erro: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     for line in stdin.lock().lines() {
