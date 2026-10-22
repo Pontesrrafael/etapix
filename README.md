@@ -38,18 +38,29 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Desktop app (`app/`) and installer (`setup/`)
 
-`pjapp` is a desktop planner for internal use, built with egui on top of the engine. It works
-alongside an installed Microsoft Project: it opens and saves Project XML (MSPDI) and leaves
-`.mpp`/`.xml` associations alone.
+`pjapp` is a desktop planner for internal use, built with egui on top of the engine and laid out
+like Project: ribbon (Arquivo, Tarefa, Recurso, Relatório, Projeto, Exibir), timeline, task grid
+next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associations alone.
 
-- Open, save and save as Project XML; new project.
-- Task table: name, duration in days, predecessors (IDs, as in Project), resources, percent
-  complete, start, finish and cost. Double-click a cell to edit it; edits reschedule at once and
-  an edit that cannot be scheduled (a dependency cycle, for example) is undone with a message.
-- Gantt next to the table: critical tasks in red, summaries, milestones, splits, progress,
-  baseline bar, weekends shaded, zoom.
-- Level resources (Project's defaults, kept as saved leveling delays), clear leveling, save
-  baseline.
+- `.mpp` files open and save through the Microsoft Project installed on the machine (`mpp.rs`):
+  Project converts between `.mpp` and Project XML invisibly over COM, and pjapp reads and writes
+  the XML. A save goes to a temporary file first and replaces the target only when the
+  conversion worked. Project XML (`.xml`) needs no Project.
+- Grid: mode, name (indented by outline level), duration ("3 dias"), start and finish
+  ("Qui 22/10/26"), predecessors and resource names. Type into an empty row to add a task. Type
+  over a cell or press F2 to edit; Enter, Tab and Escape behave as in Project. Every edit
+  reschedules, and one that cannot be scheduled (a dependency cycle, say) is undone with a
+  message in the status bar. A typed start date becomes a start-no-earlier-than constraint, as
+  in Project.
+- Tarefa tab: percent complete, indent and outdent (also Alt+Shift+arrows), link and unlink,
+  manual or automatic scheduling, insert task, summary and milestone, delete, task information,
+  scroll to the task.
+- Gantt chart: weeks over days (months over weeks when zoomed out), nonworking days shaded from
+  the project calendar, the current date, bars, summaries, milestones, splits, progress,
+  resource names and link arrows.
+- Recurso: level all (Project's defaults, kept as saved leveling delays) and clear leveling.
+  Projeto: project start date and baseline. Relatório: project overview. Exibir: Gantt or task
+  sheet, zoom, whole project, timeline on or off.
 
 `pjapp-setup` is a per-user installer with the app built in: it installs to
 `%LOCALAPPDATA%\Programs\pjapp` without admin rights, adds a Start Menu shortcut and an entry in

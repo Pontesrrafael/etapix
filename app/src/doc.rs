@@ -9,7 +9,7 @@ use pjsched::cost::{costs, Costs};
 use pjsched::cpm::{self, TaskSchedule};
 use pjsched::edit;
 use pjsched::leveling::{self, LevelingOptions};
-use pjsched::model::{Link, LinkType, Project, Task, Wm};
+use pjsched::model::{Constraint, Link, LinkType, Project, Resource, ResourceKind, Task, Wm};
 use pjsched::mspdi::read_project;
 use pjsched::mspdi_write::write_project;
 use pjsched::tracking::{save_baseline, tracking, Tracking};
@@ -37,7 +37,11 @@ impl Doc {
     }
 
     pub fn open(path: &Path) -> Result<Self, String> {
-        let xml = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let xml = if crate::mpp::is_mpp(path) {
+            crate::mpp::read_mpp(path)?
+        } else {
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+        };
         let project = read_project(&xml).map_err(|e| e.to_string())?;
         Doc::from_project(project, Some(path.to_path_buf()))
     }
@@ -47,11 +51,15 @@ impl Doc {
         Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false })
     }
 
-    /// Writes Microsoft Project XML (MSPDI), which Project opens as is.
+    /// Writes `.mpp` (through the installed Project) or Project XML, by the file's extension.
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
         let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let xml = write_project(&self.project, &self.cals, &self.schedule, &name);
-        std::fs::write(path, xml).map_err(|e| format!("{}: {e}", path.display()))?;
+        if crate::mpp::is_mpp(path) {
+            crate::mpp::write_mpp(path, &xml)?;
+        } else {
+            std::fs::write(path, xml).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
         self.path = Some(path.to_path_buf());
         self.dirty = false;
         Ok(())
@@ -75,6 +83,7 @@ impl Doc {
         }
     }
 
+    #[cfg(test)]
     pub fn add_task(&mut self, name: &str, days: f64) -> Result<usize, String> {
         let uid = self.project.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
         let id = self.project.tasks.len() as i64 + 1;
@@ -98,7 +107,168 @@ impl Doc {
                 t.preds.iter_mut().for_each(|l| l.pred = remap(l.pred));
                 t.parent = t.parent.filter(|&x| x != i).map(remap);
             }
-            p.tasks.iter_mut().enumerate().for_each(|(k, t)| t.id = k as i64 + 1);
+            renumber(p);
+            refresh_summaries(p);
+            Ok(())
+        })
+    }
+
+    /// Inserts a task at row `at` (an empty row past the end appends), shifting every reference.
+    pub fn insert_task(&mut self, at: usize, name: &str, days: f64) -> Result<usize, String> {
+        let at = at.min(self.project.tasks.len());
+        let uid = self.project.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
+        let duration = (days * DAY as f64).round() as Wm;
+        self.apply(|p| {
+            let shift = |k: usize| if k >= at { k + 1 } else { k };
+            for t in &mut p.tasks {
+                t.preds.iter_mut().for_each(|l| l.pred = shift(l.pred));
+                t.parent = t.parent.map(shift);
+            }
+            p.assignments.iter_mut().for_each(|a| a.task = shift(a.task));
+            let mut task = Task::new(uid, 0, name, duration);
+            // A new row right under a summary (or one of its subtasks) joins it, as in Project.
+            task.parent = match at.checked_sub(1).map(|k| &p.tasks[k]) {
+                Some(prev) if prev.summary => Some(at - 1),
+                Some(prev) => prev.parent,
+                None => None,
+            };
+            p.tasks.insert(at, task);
+            renumber(p);
+            Ok(())
+        })?;
+        Ok(at)
+    }
+
+    pub fn add_milestone(&mut self, at: usize) -> Result<usize, String> {
+        self.insert_task(at, "Novo marco", 0.0)
+    }
+
+    /// Outline level of task `i` (1 = top).
+    pub fn outline_level(&self, i: usize) -> usize {
+        let (mut l, mut up) = (1, self.project.tasks[i].parent);
+        while let Some(p) = up {
+            l += 1;
+            up = self.project.tasks[p].parent;
+        }
+        l
+    }
+
+    /// Indents a task under the nearest task above at its level, which becomes a summary
+    /// (Project's "Recuar Tarefa").
+    pub fn indent(&mut self, i: usize) -> Result<(), String> {
+        let level = self.outline_level(i);
+        let parent = (0..i).rev().find(|&k| self.outline_level(k) == level).ok_or("não há tarefa acima no mesmo nível")?;
+        self.apply(|p| {
+            p.tasks[i].parent = Some(parent);
+            refresh_summaries(p);
+            Ok(())
+        })
+    }
+
+    /// Moves a task one level up; the tasks below it at its old level become its subtasks
+    /// (Project's "Avançar Tarefa").
+    pub fn outdent(&mut self, i: usize) -> Result<(), String> {
+        let Some(parent) = self.project.tasks[i].parent else {
+            return Err("a tarefa já está no primeiro nível".into());
+        };
+        self.apply(|p| {
+            let grand = p.tasks[parent].parent;
+            for k in i + 1..p.tasks.len() {
+                if p.tasks[k].parent == Some(parent) {
+                    p.tasks[k].parent = Some(i);
+                }
+            }
+            p.tasks[i].parent = grand;
+            refresh_summaries(p);
+            Ok(())
+        })
+    }
+
+    /// Links the given tasks in order, finish-to-start (Project's "Vincular as Tarefas").
+    pub fn link(&mut self, rows: &[usize]) -> Result<(), String> {
+        if rows.len() < 2 {
+            return Err("selecione duas ou mais tarefas para vincular".into());
+        }
+        self.apply(|p| {
+            for w in rows.windows(2) {
+                if !p.tasks[w[1]].preds.iter().any(|l| l.pred == w[0]) {
+                    p.tasks[w[1]].preds.push(Link { pred: w[0], kind: LinkType::FinishToStart, lag: 0, lag_elapsed: false });
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Removes the links into the given tasks (Project's "Desvincular Tarefas").
+    pub fn unlink(&mut self, rows: &[usize]) -> Result<(), String> {
+        self.apply(|p| {
+            rows.iter().for_each(|&r| p.tasks[r].preds.clear());
+            Ok(())
+        })
+    }
+
+    /// A start date typed in the grid: a manual task moves there; an automatic one gets a
+    /// start-no-earlier-than constraint, as Project does.
+    pub fn set_start(&mut self, i: usize, date: chrono::NaiveDate) -> Result<(), String> {
+        let at = date.and_hms_opt(0, 0, 0).unwrap();
+        self.apply(|p| {
+            let t = &mut p.tasks[i];
+            if t.manual.is_some() {
+                t.manual = Some(at);
+            } else {
+                t.constraint = Constraint::StartNoEarlierThan(at);
+            }
+            Ok(())
+        })
+    }
+
+    /// Assigns resources by name (comma-separated) at 100%, creating unknown ones; names left
+    /// out are unassigned. The task type decides what happens to duration and work.
+    pub fn set_resources(&mut self, i: usize, names: &str) -> Result<(), String> {
+        let wanted: Vec<String> = names.split([',', ';']).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect();
+        self.apply(|p| {
+            let mut ids = Vec::new();
+            for name in &wanted {
+                let r = match p.resources.iter().position(|r| r.name.eq_ignore_ascii_case(name)) {
+                    Some(r) => r,
+                    None => {
+                        let uid = p.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
+                        p.resources.push(Resource {
+                            uid,
+                            name: name.clone(),
+                            kind: ResourceKind::Work,
+                            rates: Vec::new(),
+                            max_units: 1.0,
+                            calendar: None,
+                        });
+                        p.resources.len() - 1
+                    }
+                };
+                ids.push(r);
+            }
+            let current: Vec<usize> = p.assignments.iter().filter(|a| a.task == i).map(|a| a.resource).collect();
+            for &r in current.iter().filter(|r| !ids.contains(r)) {
+                edit::remove_assignment(p, i, r).map_err(|e| format!("{e:?}"))?;
+            }
+            for &r in ids.iter().filter(|r| !current.contains(r)) {
+                edit::add_assignment(p, i, r, 1.0).map_err(|e| format!("{e:?}"))?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Manually scheduled tasks stay where they are put; automatic ones follow their links.
+    pub fn set_manual(&mut self, i: usize, manual: bool) -> Result<(), String> {
+        let start = self.dt(self.schedule[i].start);
+        self.apply(|p| {
+            p.tasks[i].manual = manual.then_some(start);
+            Ok(())
+        })
+    }
+
+    pub fn set_project_start(&mut self, date: chrono::NaiveDate) -> Result<(), String> {
+        self.apply(|p| {
+            p.start = date.and_hms_opt(8, 0, 0).unwrap();
             Ok(())
         })
     }
@@ -191,6 +361,22 @@ impl Doc {
         self.project.tasks[i].duration as f64 / DAY as f64
     }
 
+    /// Duration as the grid shows it: a summary spans its subtasks' working time.
+    pub fn shown_days(&self, i: usize) -> f64 {
+        if !self.project.tasks[i].summary {
+            return self.days(i);
+        }
+        let (s, tl) = (&self.schedule[i], self.cals.project());
+        (tl.w(s.finish) - tl.w(s.start)) as f64 / DAY as f64
+    }
+
+    /// Whether the project calendar has working time on `date` (weekends and holidays do not).
+    pub fn is_working_day(&self, date: chrono::NaiveDate) -> bool {
+        let (clock, tl) = (&self.cals.clock, self.cals.project());
+        let day = date.and_hms_opt(0, 0, 0).unwrap();
+        tl.w(clock.at(day + Duration::days(1))) > tl.w(clock.at(day))
+    }
+
     pub fn predecessors_text(&self, i: usize) -> String {
         self.project.tasks[i].preds.iter().map(|l| self.project.tasks[l.pred].id.to_string()).collect::<Vec<_>>().join(";")
     }
@@ -206,7 +392,20 @@ impl Doc {
     }
 }
 
-type Computed = (Calendars, Vec<TaskSchedule>, Costs, Vec<Tracking>);
+/// IDs follow row order.
+fn renumber(p: &mut Project) {
+    p.tasks.iter_mut().enumerate().for_each(|(k, t)| t.id = k as i64 + 1);
+}
+
+/// A task is a summary exactly when some task has it as parent.
+fn refresh_summaries(p: &mut Project) {
+    let parents: Vec<usize> = p.tasks.iter().filter_map(|t| t.parent).collect();
+    for (k, t) in p.tasks.iter_mut().enumerate() {
+        t.summary = parents.contains(&k);
+    }
+}
+
+type Computed =(Calendars, Vec<TaskSchedule>, Costs, Vec<Tracking>);
 
 fn compute(project: &Project) -> Result<Computed, String> {
     let cals = Calendars::new(project).map_err(|e| e.0)?;
@@ -246,6 +445,29 @@ mod tests {
     }
 
     #[test]
+    fn outline_insert_and_resources() {
+        let mut d = Doc::blank();
+        d.add_task("Fase 1", 1.0).unwrap();
+        d.add_task("A", 2.0).unwrap();
+        d.add_task("B", 3.0).unwrap();
+        d.indent(1).unwrap();
+        d.indent(2).unwrap();
+        assert!(d.project.tasks[0].summary);
+        assert_eq!(d.schedule[0].finish, d.schedule[1].finish.max(d.schedule[2].finish));
+        d.link(&[1, 2]).unwrap();
+        assert_eq!(d.predecessors_text(2), "2");
+        // Inserting inside the summary keeps links pointing at the same tasks.
+        d.insert_task(2, "A2", 1.0).unwrap();
+        assert_eq!(d.project.tasks[2].parent, Some(0));
+        assert_eq!(d.predecessors_text(3), "2");
+        d.set_resources(1, "Ana, Bruno").unwrap();
+        assert_eq!(d.resources_text(1), "Ana, Bruno");
+        d.outdent(2).unwrap();
+        assert_eq!(d.project.tasks[2].parent, None);
+        assert_eq!(d.project.tasks[3].parent, Some(2));
+    }
+
+    #[test]
     fn delete_keeps_links_consistent() {
         let mut d = Doc::blank();
         d.add_task("A", 1.0).unwrap();
@@ -255,5 +477,30 @@ mod tests {
         d.delete_task(0).unwrap();
         assert_eq!(d.project.tasks[1].name, "C");
         assert_eq!(d.predecessors_text(1), "1");
+    }
+}
+
+#[cfg(test)]
+mod mpp_tests {
+    use super::*;
+
+    /// Needs Microsoft Project installed: `cargo test -p pjapp -- --ignored mpp`.
+    #[test]
+    #[ignore]
+    fn mpp_round_trip_through_installed_project() {
+        let dir = std::env::temp_dir().join("pjapp-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut d = Doc::blank();
+        d.add_task("Fundação", 3.0).unwrap();
+        let b = d.add_task("Estrutura", 2.0).unwrap();
+        d.set_predecessors(b, "1").unwrap();
+        let path = dir.join("teste-pjapp.mpp");
+        let _ = std::fs::remove_file(&path);
+        d.save(&path).unwrap();
+        assert!(std::fs::read(&path).unwrap().starts_with(&[0xD0, 0xCF, 0x11, 0xE0]), "not an OLE compound file");
+        let back = Doc::open(&path).unwrap();
+        assert_eq!(back.project.tasks.len(), 2);
+        assert_eq!(back.project.tasks[1].name, "Estrutura");
+        assert_eq!(back.schedule[1].finish, d.schedule[1].finish);
     }
 }
