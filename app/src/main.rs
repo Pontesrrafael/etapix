@@ -60,7 +60,9 @@ fn setup_style(ctx: &egui::Context, chosen: Option<&fonts::Family>) {
     }
     let fallback: Vec<String> = fonts.families[&egui::FontFamily::Proportional].clone();
     let mut segoe = Vec::new();
-    if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf") {
+    // Windows' UI font, or DejaVu Sans, which Ubuntu and most Linux desktops ship.
+    let backup = if cfg!(windows) { r"C:\Windows\Fonts\segoeui.ttf" } else { "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" };
+    if let Ok(bytes) = std::fs::read(backup) {
         fonts.font_data.insert("segoe".into(), egui::FontData::from_owned(bytes));
         segoe.push("segoe".to_string());
     }

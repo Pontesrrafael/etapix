@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 const SKILL: &str = include_str!("../../../../integrations/skill/etapix/SKILL.md");
 
 fn home() -> PathBuf {
-    PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default())
+    PathBuf::from(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default())
 }
 
 /// Writes `text` to `path` through a temporary file, keeping a one-time copy of the original.
@@ -109,19 +109,25 @@ pub fn run(install: bool, mcpb: Option<&Path>) -> Result<(), String> {
     if codex(target)? {
         done.push("Codex");
     }
-    let desktop = PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("Claude");
-    if let (true, Some(mcpb), true) = (install, mcpb, desktop.exists()) {
-        if mcpb.exists() {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", ""])
-                .arg(mcpb)
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn();
-            done.push("Claude Desktop (confirme em Instalar)");
+    // Claude Desktop exists for Windows and macOS only.
+    #[cfg(windows)]
+    {
+        let desktop = PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("Claude");
+        if let (true, Some(mcpb), true) = (install, mcpb, desktop.exists()) {
+            if mcpb.exists() {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", ""])
+                    .arg(mcpb)
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+                done.push("Claude Desktop (confirme em Instalar)");
+            }
         }
     }
+    #[cfg(not(windows))]
+    let _ = mcpb;
     let verb = if install { "Etapix instalado em" } else { "Etapix removido de" };
     if done.is_empty() {
         println!("Nenhum Claude Code, Codex ou Claude Desktop encontrado para este usuário.");

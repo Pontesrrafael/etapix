@@ -1,4 +1,5 @@
-//! `.mpp` files through the Microsoft Project installed on the machine.
+//! `.mpp` files through the Microsoft Project installed on the machine (Windows only: on Linux
+//! there is no Project, and `.mpp` files are refused with a message pointing to Project XML).
 //!
 //! The `.mpp` format is binary and undocumented, so Etapix does not parse it: it asks Project
 //! (through its documented COM object model, invisibly) to convert between `.mpp` and Project
@@ -10,6 +11,8 @@
 //!   failed conversion never damages the existing file.
 //! - Project adds every file it opens to its recent list; the temporary XML files are removed
 //!   from that list afterwards (the `.mpp` itself stays, as when you open it in Project).
+
+#![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -63,6 +66,14 @@ fn temp_dir() -> PathBuf {
     std::env::temp_dir().join("etapix-mpp")
 }
 
+#[cfg(not(windows))]
+fn convert(_: &Path, _: &Path, _: &str) -> Result<(), String> {
+    Err("arquivos .mpp precisam do Microsoft Project, que só existe no Windows. Salve ou abra como \
+         Project XML (.xml): o Project abre e salva esse formato."
+        .into())
+}
+
+#[cfg(windows)]
 fn convert(src: &Path, dst: &Path, mode: &str) -> Result<(), String> {
     let dir = temp_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

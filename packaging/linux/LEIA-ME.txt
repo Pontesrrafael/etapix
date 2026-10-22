@@ -1,0 +1,16 @@
+Etapix 0.1.0 para Linux (Ubuntu 22.04 ou mais novo, x86_64)
+
+COMO INSTALAR
+1. Descompacte o arquivo:            tar -xzf Etapix-Linux-x86_64.tar.gz
+2. Entre na pasta e rode o instalador: cd etapix && ./instalar.sh
+
+Não precisa de sudo: tudo fica na sua pasta pessoal. O Etapix aparece no menu de
+aplicativos e também abre pelo terminal com o comando "etapix". O instalador também
+registra o conector do Etapix no Claude Code e no Codex, se estiverem instalados.
+
+ARQUIVOS .MPP
+No Linux não existe Microsoft Project, então arquivos .mpp não abrem. Use Project XML
+(.xml): o Project, no Windows, abre e salva esse formato sem perder o cronograma.
+
+DESINSTALAR
+  ~/.local/share/etapix/desinstalar.sh

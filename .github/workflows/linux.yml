@@ -1,0 +1,56 @@
+# Builds and tests Etapix on Ubuntu and publishes the Linux package
+# (Etapix-Linux-x86_64.tar.gz) as a workflow artifact and in the latest release.
+name: Linux
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      # rust-toolchain.toml pins the Windows GNU toolchain for the Windows build machine.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test -p pjsched -p etapix
+
+      - name: Build
+        run: cargo build --release -p etapix --bins
+
+      - name: Package
+        run: |
+          mkdir -p pkg/etapix
+          cp target/release/etapix target/release/etapix-mcp pkg/etapix/
+          cargo run -q --release -p etapix --example logo_png -- pkg/etapix/etapix.png 256
+          cp packaging/linux/instalar.sh packaging/linux/desinstalar.sh packaging/linux/LEIA-ME.txt pkg/etapix/
+          chmod +x pkg/etapix/*.sh
+          tar -czf Etapix-Linux-x86_64.tar.gz -C pkg etapix
+
+      - name: Smoke test (MCP server)
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | pkg/etapix/etapix-mcp | grep -q criar_projeto
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Etapix-Linux-x86_64
+          path: Etapix-Linux-x86_64.tar.gz
+
+      - name: Attach to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --json tagName --jq .tagName)
+          gh release upload "$tag" "Etapix-Linux-x86_64.tar.gz#Etapix - Linux (Ubuntu, x86_64)" --clobber

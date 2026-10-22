@@ -1,6 +1,6 @@
-//! Fonts installed on this Windows machine (for all users and for this user), read from the
-//! registry where Windows lists them. They are loaded from the machine's own font files when
-//! picked, never copied into Etapix.
+//! Fonts installed on this machine: on Windows from the registry where Windows lists them (for
+//! all users and for this user), on Linux from fontconfig (`fc-list`). They are loaded from the
+//! machine's own font files when picked, never copied into Etapix.
 
 use std::path::PathBuf;
 
@@ -17,7 +17,35 @@ const STYLES: [&str; 14] = [
     "SemiLight", "Semilight",
 ];
 
+/// Fontconfig's faces as (display name in the registry's style, "Family" or "Family Bold").
+#[cfg(not(windows))]
+fn entries() -> Vec<(String, PathBuf)> {
+    let Ok(o) = std::process::Command::new("fc-list").args([":", "family", "style", "file"]).output() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    // Lines look like "/usr/share/fonts/.../DejaVuSans-Bold.ttf: DejaVu Sans:style=Bold".
+    for line in String::from_utf8_lossy(&o.stdout).lines() {
+        let mut parts = line.splitn(3, ':');
+        let (Some(file), Some(family), style) = (parts.next(), parts.next(), parts.next()) else { continue };
+        let lower = file.to_lowercase();
+        if !(lower.ends_with(".ttf") || lower.ends_with(".otf") || lower.ends_with(".ttc")) {
+            continue;
+        }
+        let family = family.split(',').next().unwrap_or("").trim().to_string();
+        let style = style.and_then(|s| s.strip_prefix("style=")).unwrap_or("Regular");
+        let style = style.split(',').next().unwrap_or("Regular").trim();
+        let name = match style {
+            "Regular" | "Book" | "Roman" | "Normal" => family,
+            other => format!("{family} {other}"),
+        };
+        out.push((name, PathBuf::from(file.trim())));
+    }
+    out
+}
+
 /// Registry entries as (display name, file path).
+#[cfg(windows)]
 fn entries() -> Vec<(String, PathBuf)> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -61,9 +89,18 @@ pub fn installed() -> Vec<Family> {
     families
 }
 
-/// The settings file: `%APPDATA%\Etapix\settings.txt`, `key=value` lines.
+/// The settings file (`key=value` lines).
 fn settings_path() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Etapix").join("settings.txt"))
+    // %APPDATA%\Etapix on Windows; $XDG_CONFIG_HOME/etapix (usually ~/.config/etapix) on Linux.
+    let dir = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Etapix"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+            .map(|c| c.join("etapix"))
+    };
+    dir.map(|d| d.join("settings.txt"))
 }
 
 /// The saved font choice: family name (empty for the brand font) and text size.
@@ -80,7 +117,7 @@ pub fn save_choice(family: &str, size: f32) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     /// Every Windows install has Arial with its bold face.
     #[test]
