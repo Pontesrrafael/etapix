@@ -103,7 +103,7 @@ fn tools() -> Value {
                     "nome": { "type": "string" },
                     "duracao_dias": { "type": "number", "description": "Dias úteis. 0 = marco. Padrão 1." },
                     "nivel": { "type": "integer", "minimum": 1, "description": "Nível na estrutura (1 = topo). A tarefa acima com nível menor vira resumo." },
-                    "predecessoras": { "type": "string", "description": "Ids das predecessoras (término-início), separados por ';', ex. \"2;3\"." },
+                    "predecessoras": { "type": "string", "description": "Predecessoras como no Project, separadas por ';': id, tipo opcional (TI término-início, II início-início, TT término-término, IT início-término) e defasagem em dias úteis, ex. \"2;3II;4TI+2 dias\"." },
                     "recursos": { "type": "string", "description": "Nomes separados por vírgula, ex. \"Ana, Bruno\". Recursos novos são criados." },
                     "inicio": { "type": "string", "description": "Não iniciar antes de (dd/mm/aaaa)." }
                 }}}

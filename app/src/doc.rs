@@ -25,7 +25,16 @@ pub struct Doc {
     pub costs: Costs,
     pub tracking: Vec<Tracking>,
     pub dirty: bool,
+    /// Bumped by every change, so a caller can tell whether an action changed anything.
+    version: u64,
+    /// The project before the action in progress (see `begin`/`end`).
+    pending: Option<Project>,
+    undo: Vec<Project>,
+    redo: Vec<Project>,
 }
+
+/// How many actions Desfazer can go back.
+const UNDO_LIMIT: usize = 200;
 
 impl Doc {
     /// An empty project starting next Monday 08:00.
@@ -48,7 +57,7 @@ impl Doc {
 
     fn from_project(project: Project, path: Option<PathBuf>) -> Result<Self, String> {
         let (cals, schedule, costs, tracking) = compute(&project)?;
-        Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false })
+        Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false, version: 0, pending: None, undo: Vec::new(), redo: Vec::new() })
     }
 
     /// Writes `.mpp` (through the installed Project) or Project XML, by the file's extension.
@@ -74,6 +83,7 @@ impl Doc {
             Ok((cals, schedule, costs, tracking)) => {
                 (self.cals, self.schedule, self.costs, self.tracking) = (cals, schedule, costs, tracking);
                 self.dirty = true;
+                self.version += 1;
                 Ok(())
             }
             Err(e) => {
@@ -257,6 +267,19 @@ impl Doc {
         })
     }
 
+    /// Adds a work resource at 100% (Recurso > Adicionar Recursos).
+    pub fn add_resource(&mut self, name: &str) -> Result<(), String> {
+        if self.project.resources.iter().any(|r| r.name.eq_ignore_ascii_case(name)) {
+            return Err(format!("já existe o recurso {name}"));
+        }
+        let uid = self.project.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
+        let name = name.to_string();
+        self.apply(|p| {
+            p.resources.push(Resource { uid, name, kind: ResourceKind::Work, rates: Vec::new(), max_units: 1.0, calendar: None });
+            Ok(())
+        })
+    }
+
     /// Manually scheduled tasks stay where they are put; automatic ones follow their links.
     pub fn set_manual(&mut self, i: usize, manual: bool) -> Result<(), String> {
         let start = self.dt(self.schedule[i].start);
@@ -274,8 +297,64 @@ impl Doc {
     }
 
     pub fn rename(&mut self, i: usize, name: &str) {
-        self.project.tasks[i].name = name.to_string();
+        if self.project.tasks[i].name != name {
+            self.project.tasks[i].name = name.to_string();
+            self.dirty = true;
+            self.version += 1;
+        }
+    }
+
+    /// Starts a user action: everything until `end` undoes as one step, as in Project.
+    pub fn begin(&mut self) -> u64 {
+        if self.pending.is_none() {
+            self.pending = Some(self.project.clone());
+        }
+        self.version
+    }
+
+    /// Ends the action started at `version`; it joins the undo history if it changed anything.
+    pub fn end(&mut self, version: u64) {
+        if let Some(before) = self.pending.take() {
+            if self.version != version {
+                self.undo.push(before);
+                if self.undo.len() > UNDO_LIMIT {
+                    self.undo.remove(0);
+                }
+                self.redo.clear();
+            }
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Desfazer: back to the project before the last action.
+    pub fn undo(&mut self) -> Result<(), String> {
+        let Some(previous) = self.undo.pop() else { return Ok(()) };
+        let current = std::mem::replace(&mut self.project, previous);
+        self.redo.push(current);
+        self.recompute()
+    }
+
+    /// Refazer: the action Desfazer took back.
+    pub fn redo(&mut self) -> Result<(), String> {
+        let Some(next) = self.redo.pop() else { return Ok(()) };
+        let current = std::mem::replace(&mut self.project, next);
+        self.undo.push(current);
+        self.recompute()
+    }
+
+    fn recompute(&mut self) -> Result<(), String> {
+        let (cals, schedule, costs, tracking) = compute(&self.project)?;
+        (self.cals, self.schedule, self.costs, self.tracking) = (cals, schedule, costs, tracking);
         self.dirty = true;
+        self.version += 1;
+        Ok(())
     }
 
     /// Sets the duration in working days; the task type decides what else changes.
@@ -289,27 +368,50 @@ impl Doc {
         })
     }
 
-    /// Replaces the task's predecessors with finish-to-start links to the given task IDs
-    /// (comma-separated, as in Project's Predecessors column).
-    pub fn set_predecessors(&mut self, i: usize, ids: &str) -> Result<(), String> {
+    /// Replaces the task's predecessors, written as in Project's Predecessoras column: ids
+    /// separated by ";" (or ","), each with an optional link type (TI, II, TT, IT, or the English
+    /// FS, SS, FF, SF) and lag in working days ("2", "3II", "4TI+2 dias", "5TT-1d").
+    pub fn set_predecessors(&mut self, i: usize, text: &str) -> Result<(), String> {
         let mut links = Vec::new();
-        for part in ids.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
-            let id: i64 = part.parse().map_err(|_| format!("predecessora inválida: {part}"))?;
-            let pred = self
-                .project
-                .tasks
-                .iter()
-                .position(|t| t.id == id)
-                .ok_or_else(|| format!("não existe tarefa {id}"))?;
-            if pred == i {
+        for part in text.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
+            let link = self.parse_link(part)?;
+            if link.pred == i {
                 return Err("uma tarefa não pode depender de si mesma".into());
             }
-            links.push(Link { pred, kind: LinkType::FinishToStart, lag: 0, lag_elapsed: false });
+            links.push(link);
         }
         self.apply(|p| {
             p.tasks[i].preds = links;
             Ok(())
         })
+    }
+
+    fn parse_link(&self, part: &str) -> Result<Link, String> {
+        let bad = || format!("predecessora inválida: {part} (use, por exemplo, 3, 3II ou 3TI+2 dias)");
+        let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let id: i64 = digits.parse().map_err(|_| bad())?;
+        let rest = part[digits.len()..].trim().to_uppercase();
+        let (kind, rest) = match rest.get(..2) {
+            Some("TI" | "FS") => (LinkType::FinishToStart, &rest[2..]),
+            Some("II" | "SS") => (LinkType::StartToStart, &rest[2..]),
+            Some("TT" | "FF") => (LinkType::FinishToFinish, &rest[2..]),
+            Some("IT" | "SF") => (LinkType::StartToFinish, &rest[2..]),
+            _ => (LinkType::FinishToStart, rest.as_str()),
+        };
+        let rest = rest.trim();
+        let lag = if rest.is_empty() {
+            0
+        } else {
+            let (sign, num) = match rest.chars().next() {
+                Some('+') => (1.0, &rest[1..]),
+                Some('-') => (-1.0, &rest[1..]),
+                _ => return Err(bad()),
+            };
+            let days = crate::fmt::parse_days(num).ok_or_else(bad)?;
+            (sign * days * DAY as f64).round() as Wm
+        };
+        let pred = self.project.tasks.iter().position(|t| t.id == id).ok_or_else(|| format!("não existe tarefa {id}"))?;
+        Ok(Link { pred, kind, lag, lag_elapsed: false })
     }
 
     /// Percent complete; starting a task records its actual start, finishing it its actual finish.
@@ -377,8 +479,29 @@ impl Doc {
         tl.w(clock.at(day + Duration::days(1))) > tl.w(clock.at(day))
     }
 
+    /// Predecessors as Project writes them in pt-BR: "2;3II;4TI+2 dias".
     pub fn predecessors_text(&self, i: usize) -> String {
-        self.project.tasks[i].preds.iter().map(|l| self.project.tasks[l.pred].id.to_string()).collect::<Vec<_>>().join(";")
+        self.project.tasks[i]
+            .preds
+            .iter()
+            .map(|l| {
+                let id = self.project.tasks[l.pred].id;
+                let kind = match l.kind {
+                    LinkType::FinishToStart => "TI",
+                    LinkType::StartToStart => "II",
+                    LinkType::FinishToFinish => "TT",
+                    LinkType::StartToFinish => "IT",
+                };
+                if l.lag == 0 {
+                    if kind == "TI" { id.to_string() } else { format!("{id}{kind}") }
+                } else {
+                    let days = l.lag as f64 / DAY as f64;
+                    let sign = if days < 0.0 { "-" } else { "+" };
+                    format!("{id}{kind}{sign}{}", crate::fmt::days(days.abs()))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(";")
     }
 
     pub fn resources_text(&self, i: usize) -> String {
@@ -465,6 +588,50 @@ mod tests {
         d.outdent(2).unwrap();
         assert_eq!(d.project.tasks[2].parent, None);
         assert_eq!(d.project.tasks[3].parent, Some(2));
+    }
+
+    #[test]
+    fn undo_and_redo_whole_actions() {
+        let mut d = Doc::blank();
+        let v = d.begin();
+        d.add_task("A", 1.0).unwrap();
+        d.add_task("B", 2.0).unwrap();
+        d.end(v);
+        let v = d.begin();
+        d.set_duration_days(1, 5.0).unwrap();
+        d.end(v);
+        // An action that changes nothing leaves no step behind.
+        let v = d.begin();
+        d.rename(0, "A");
+        d.end(v);
+        d.undo().unwrap();
+        assert_eq!(d.days(1), 2.0);
+        d.undo().unwrap();
+        assert!(d.project.tasks.is_empty() && !d.can_undo());
+        d.redo().unwrap();
+        d.redo().unwrap();
+        assert_eq!(d.project.tasks.len(), 2);
+        assert_eq!(d.days(1), 5.0);
+        assert!(!d.can_redo());
+    }
+
+    #[test]
+    fn predecessors_with_types_and_lags_as_in_project() {
+        let mut d = Doc::blank();
+        d.add_task("A", 2.0).unwrap();
+        d.add_task("B", 2.0).unwrap();
+        let c = d.add_task("C", 1.0).unwrap();
+        d.set_predecessors(c, "1II; 2TI+2 dias").unwrap();
+        assert_eq!(d.predecessors_text(c), "1II;2TI+2 dias");
+        assert_eq!(d.project.tasks[c].preds[1].lag, 2 * DAY);
+        d.set_predecessors(c, "2tt-1d").unwrap();
+        assert_eq!(d.predecessors_text(c), "2TT-1 dia");
+        assert!(d.set_predecessors(c, "2XY").is_err());
+        assert!(d.set_predecessors(c, "Ana").is_err());
+        // What the column shows can be typed back unchanged.
+        let shown = d.predecessors_text(c);
+        d.set_predecessors(c, &shown).unwrap();
+        assert_eq!(d.predecessors_text(c), shown);
     }
 
     #[test]

@@ -131,12 +131,38 @@ fn dashed(p: &Painter, top: Pos2, bottom: f32, color: Color32) {
     }
 }
 
+/// What the Gantt shows besides the bars (Formato > Estilos de Barra).
+#[derive(Clone, Copy, Default)]
+pub struct Options {
+    /// Critical tasks in red.
+    pub critical: bool,
+    /// Baseline as a grey bar under each task.
+    pub baseline: bool,
+    /// Total slack as a thin line after each task.
+    pub slack: bool,
+}
+
+const CRITICAL: Color32 = Color32::from_rgb(0xE0, 0x5A, 0x4F);
+const CRITICAL_EDGE: Color32 = Color32::from_rgb(0xB0, 0x3A, 0x30);
+
 /// Bar for task `i` in the row whose vertical centre is `mid`.
-pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32) {
+pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32, opts: Options) {
     let t = &doc.project.tasks[i];
     let sch = &doc.schedule[i];
     let (x0, x1) = (s.x(doc.dt(sch.start)), s.x(doc.dt(sch.finish)));
     let font = FontId::proportional(11.0);
+    if opts.baseline {
+        if let Some(b) = &t.baseline {
+            let (b0, b1) = (s.x(b.start), s.x(b.finish));
+            p.rect_filled(Rect::from_min_max(Pos2::new(b0, mid + 6.0), Pos2::new(b1.max(b0 + 2.0), mid + 9.0)), 0.0, Color32::from_gray(160));
+        }
+    }
+    if opts.slack && !t.summary && sch.total_slack > 0 {
+        // Slack in working days, drawn at calendar-day scale (as Project's slack bar).
+        let days = sch.total_slack as f32 / crate::doc::DAY as f32;
+        let end = x1 + days * s.day * 7.0 / 5.0;
+        p.line_segment([Pos2::new(x1, mid + 4.0), Pos2::new(end, mid + 4.0)], Stroke::new(2.0_f32, Color32::from_rgb(0x2B, 0xAF, 0x9A)));
+    }
     if t.summary {
         p.rect_filled(Rect::from_min_max(Pos2::new(x0, mid - 4.0), Pos2::new(x1, mid + 1.0)), 0.0, TEXT);
         for x in [x0, x1] {
@@ -153,7 +179,13 @@ pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32) {
         p.text(Pos2::new(x0 + 10.0, mid), Align2::LEFT_CENTER, doc.dt(sch.start).format("%d/%m").to_string(), font, TEXT);
         return;
     }
-    let (fill, edge) = if t.manual.is_some() { (MANUAL, MANUAL_EDGE) } else { (BAR, BAR_EDGE) };
+    let (fill, edge) = if opts.critical && sch.critical {
+        (CRITICAL, CRITICAL_EDGE)
+    } else if t.manual.is_some() {
+        (MANUAL, MANUAL_EDGE)
+    } else {
+        (BAR, BAR_EDGE)
+    };
     for &(a, b) in &sch.segments {
         let (a, b) = (s.x(doc.dt(a)), s.x(doc.dt(b)));
         let r = Rect::from_min_max(Pos2::new(a, mid - 5.0), Pos2::new(b.max(a + 2.0), mid + 5.0));

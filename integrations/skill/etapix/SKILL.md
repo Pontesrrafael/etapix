@@ -36,8 +36,9 @@ If these tools are not available, tell the user to install the Etapix connector 
    - `duracao_dias` counts working days (Mon–Fri on the standard calendar). `0` makes a milestone
      (marco).
    - `predecessoras` uses the ids the tasks will get: ids are the 1-based row numbers, counting
-     summaries, in the order you send them (plus the tasks already in the file). Links are
-     finish-to-start.
+     summaries, in the order you send them (plus the tasks already in the file). Write them as
+     in Project: `2` (finish-to-start), `3II` (start-to-start), `4TT` (finish-to-finish), `5IT`
+     (start-to-finish), with an optional lag in working days: `2TI+3 dias`, `3II-1d`.
    - `recursos`: names separated by commas; new names become new resources at 100%.
 3. `ler_projeto` and report the finish date, the critical path (tasks with `critica: true`) and
    anything odd, such as a resource on two tasks at once (offer `nivelar_recursos`).

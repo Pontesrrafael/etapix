@@ -91,6 +91,10 @@ pub fn installed() -> Vec<Family> {
 
 /// The settings file (`key=value` lines).
 fn settings_path() -> Option<PathBuf> {
+    // Tests drive the real interface: they must never touch the person's own settings.
+    if cfg!(test) {
+        return Some(std::env::temp_dir().join(format!("etapix-test-settings-{}.txt", std::process::id())));
+    }
     // %APPDATA%\Etapix on Windows; $XDG_CONFIG_HOME/etapix (usually ~/.config/etapix) on Linux.
     let dir = if cfg!(windows) {
         std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Etapix"))

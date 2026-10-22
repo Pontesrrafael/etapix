@@ -107,6 +107,27 @@ fn register(dir: &Path, uninstaller: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes `dir/name`. Claude and Codex keep the connector running while they are open, and
+/// Windows refuses to overwrite a running program but lets it be renamed: the old copy moves
+/// aside and is deleted on a later install, once nothing runs it.
+fn write_in_use(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with(&format!("{name}.antigo")) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let target = dir.join(name);
+    if std::fs::write(&target, bytes).is_ok() {
+        return Ok(());
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let aside = dir.join(format!("{name}.antigo-{stamp}"));
+    std::fs::rename(&target, &aside).map_err(|e| format!("{name}: {e}"))?;
+    std::fs::write(&target, bytes).map_err(|e| format!("{name}: {e}"))
+}
+
 fn install() -> Result<PathBuf, String> {
     let dir = install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -119,7 +140,7 @@ fn install() -> Result<PathBuf, String> {
         std::fs::copy(&me, &uninstaller).map_err(|e| format!("{}: {e}", uninstaller.display()))?;
     }
     for (name, bytes) in [("etapix-mcp.exe", MCP), ("etapix.mcpb", MCPB)] {
-        std::fs::write(dir.join(name), bytes).map_err(|e| format!("{name}: {e} (o Claude ou o Codex está usando o Etapix?)"))?;
+        write_in_use(&dir, name, bytes)?;
     }
     create_shortcut(&exe, &shortcut())?;
     register(&dir, &uninstaller)?;

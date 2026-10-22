@@ -4,6 +4,7 @@
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
+mod dialogs;
 mod doc;
 mod fmt;
 mod fonts;
@@ -12,6 +13,9 @@ mod icons;
 /// The Etapix mark and palette.
 mod logo;
 mod mpp;
+#[cfg(test)]
+mod monkey_tests;
+mod ribbon;
 mod snapshot;
 
 use std::collections::BTreeSet;
@@ -107,6 +111,21 @@ fn font_named(family: &str, size: f32) -> FontId {
     font(family, size)
 }
 
+/// The task's outline number ("2.1.3"), as Project's WBS-like "Número da Estrutura de Tópicos".
+fn outline_number(doc: &Doc, row: usize) -> String {
+    let tasks = &doc.project.tasks;
+    let mut parts = Vec::new();
+    let mut cur = Some(row);
+    while let Some(i) = cur {
+        let parent = tasks[i].parent;
+        let position = (0..=i).filter(|&k| tasks[k].parent == parent).count();
+        parts.push(position.to_string());
+        cur = parent;
+    }
+    parts.reverse();
+    parts.join(".")
+}
+
 /// Column widths saved from the last session, or the defaults.
 fn saved_widths() -> [f32; 10] {
     let mut w = COLUMNS.map(|c| c.2);
@@ -176,7 +195,7 @@ const COLUMNS: [(Col, &str, f32); 10] = [
     (Col::Add, "Adicionar Nova Coluna", 150.0),
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Tab {
     File,
     Task,
@@ -184,16 +203,30 @@ enum Tab {
     Report,
     Project,
     View,
+    Help,
+    Format,
 }
 
-const TABS: [(Tab, &str); 6] = [
+const TABS: [(Tab, &str); 8] = [
     (Tab::File, "Arquivo"),
     (Tab::Task, "Tarefa"),
     (Tab::Resource, "Recurso"),
     (Tab::Report, "Relatório"),
     (Tab::Project, "Projeto"),
     (Tab::View, "Exibir"),
+    (Tab::Help, "Ajuda"),
+    // Project's contextual tab for the Gantt chart ("Ferramentas de Gráfico de Gantt").
+    (Tab::Format, "Formato"),
 ];
+
+/// The reports of Relatório > Exibir Relatórios.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Report {
+    Dashboard,
+    Resources,
+    Costs,
+    InProgress,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
@@ -224,12 +257,38 @@ enum Act {
     ClearLevel,
     Baseline,
     ProjectInfo,
-    Overview,
     ZoomIn,
     ZoomOut,
     Whole,
     Timeline,
     View(View),
+    Cut,
+    Copy,
+    Paste,
+    RespectLinks,
+    /// Moves the selected tasks by this many calendar days.
+    Move(i64),
+    AddTimeline,
+    Find,
+    Assign,
+    AddResource,
+    Report(Report),
+    Calc,
+    MoveProject,
+    ZoomSelected,
+    /// Sets the timescale: the width of a day in pixels.
+    Timescale(f32),
+    About,
+    Undo,
+    Redo,
+}
+
+/// What waits for "Deseja salvar as alterações?".
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pending {
+    Close,
+    New,
+    Open,
 }
 
 struct Editing {
@@ -270,6 +329,27 @@ struct App {
     /// Row height and column widths, resizable by dragging the grid's borders.
     row_h: f32,
     col_w: [f32; 10],
+    /// Copied tasks: name, duration in days and outline level.
+    clipboard: Vec<(String, f64, usize)>,
+    /// Tasks (by UID) shown on the timeline strip.
+    timeline_tasks: BTreeSet<i64>,
+    gantt_opts: gantt::Options,
+    outline_numbers: bool,
+    find: Option<String>,
+    assign: bool,
+    add_resource: Option<String>,
+    report: Option<Report>,
+    move_project: Option<String>,
+    about: bool,
+    /// Each ribbon tab's width at full size, to decide when to draw it compact.
+    ribbon_widths: std::collections::HashMap<Tab, f32>,
+    /// Driven by tests: no file dialogs (they would wait for a person).
+    headless: bool,
+    /// An action waiting for the save-changes question; `closing` lets the window close.
+    confirm: Option<Pending>,
+    closing: bool,
+    /// Commands from the quick access toolbar, run with the frame's other actions.
+    quick: Vec<Act>,
 }
 
 impl App {
@@ -306,6 +386,21 @@ impl App {
             text_size,
             row_h: fonts::setting("row_height").and_then(|v| v.parse().ok()).unwrap_or(ROW).max(text_size + 8.0),
             col_w: saved_widths(),
+            clipboard: Vec::new(),
+            timeline_tasks: BTreeSet::new(),
+            gantt_opts: gantt::Options::default(),
+            outline_numbers: false,
+            find: None,
+            assign: false,
+            add_resource: None,
+            report: None,
+            move_project: None,
+            about: false,
+            ribbon_widths: std::collections::HashMap::new(),
+            headless: false,
+            confirm: None,
+            closing: false,
+            quick: Vec::new(),
         }
     }
 
@@ -349,6 +444,9 @@ impl App {
     }
 
     fn open(&mut self) {
+        if self.headless {
+            return;
+        }
         let picked = rfd::FileDialog::new()
             .add_filter("Arquivos do Project", &["mpp", "xml"])
             .add_filter("Projeto (*.mpp)", &["mpp"])
@@ -363,6 +461,9 @@ impl App {
     }
 
     fn save(&mut self, ask: bool) {
+        if self.headless {
+            return;
+        }
         let path = match (&self.doc.path, ask) {
             (Some(p), false) => Some(p.clone()),
             _ => rfd::FileDialog::new()
@@ -397,6 +498,88 @@ impl App {
     }
 
     fn run(&mut self, act: Act) {
+        match act {
+            Act::Undo => {
+                let r = self.doc.undo();
+                self.after_history();
+                return self.report(r);
+            }
+            Act::Redo => {
+                let r = self.doc.redo();
+                self.after_history();
+                return self.report(r);
+            }
+            Act::New | Act::Open if self.doc.dirty && !self.headless => {
+                self.confirm = Some(if matches!(act, Act::New) { Pending::New } else { Pending::Open });
+                return;
+            }
+            _ => {}
+        }
+        let version = self.doc.begin();
+        self.run_action(act);
+        self.doc.end(version);
+    }
+
+    /// "Deseja salvar as alterações?" before closing, a new project or opening another file.
+    fn save_changes_dialog(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self.confirm else { return };
+        let mut choice = None;
+        egui::Window::new("Etapix")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(format!("Deseja salvar as alterações em \"{}\"?", self.file_name()));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Salvar").clicked() {
+                        choice = Some(0);
+                    }
+                    if ui.button("Não Salvar").clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.button("Cancelar").clicked() {
+                        choice = Some(2);
+                    }
+                });
+            });
+        let go_on = match choice {
+            None => return,
+            Some(0) => {
+                self.save(false);
+                !self.doc.dirty
+            }
+            Some(1) => true,
+            _ => false,
+        };
+        self.confirm = None;
+        if !go_on {
+            return;
+        }
+        match pending {
+            Pending::Close => {
+                self.closing = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Pending::New => {
+                self.doc.dirty = false;
+                self.run(Act::New);
+            }
+            Pending::Open => {
+                self.doc.dirty = false;
+                self.run(Act::Open);
+            }
+        }
+    }
+
+    /// After Desfazer/Refazer the selection may point past the last task.
+    fn after_history(&mut self) {
+        let n = self.n();
+        self.selected.retain(|&r| r < n);
+        self.editing = None;
+    }
+
+    fn run_action(&mut self, act: Act) {
         let rows = self.targets();
         let r = match act {
             Act::New => {
@@ -411,17 +594,34 @@ impl App {
             }
             Act::Save => {
                 self.save(false);
-                self.tab = Tab::Task;
+                if self.tab == Tab::File {
+                    self.tab = Tab::Task;
+                }
                 Ok(())
             }
             Act::SaveAs => {
                 self.save(true);
-                self.tab = Tab::Task;
+                if self.tab == Tab::File {
+                    self.tab = Tab::Task;
+                }
                 Ok(())
             }
             Act::Percent(p) => rows.iter().try_for_each(|&i| if self.doc.project.tasks[i].summary { Ok(()) } else { self.doc.set_percent(i, p) }),
-            Act::Indent => rows.iter().try_for_each(|&i| self.doc.indent(i)),
-            Act::Outdent => rows.iter().rev().try_for_each(|&i| self.doc.outdent(i)),
+            // As in Project, rows that cannot move a level are left alone instead of failing.
+            Act::Indent => {
+                rows.iter().for_each(|&i| {
+                    let _ = self.doc.indent(i);
+                });
+                Ok(())
+            }
+            Act::Outdent => {
+                for &i in rows.iter().rev() {
+                    if self.doc.project.tasks[i].parent.is_some() {
+                        let _ = self.doc.outdent(i);
+                    }
+                }
+                Ok(())
+            }
             Act::Link => self.doc.link(&rows),
             Act::Unlink => self.doc.unlink(&rows),
             Act::Manual(m) => rows.iter().try_for_each(|&i| self.doc.set_manual(i, m)),
@@ -451,10 +651,6 @@ impl App {
                 self.project_info = Some(self.doc.project.start.format("%d/%m/%Y").to_string());
                 Ok(())
             }
-            Act::Overview => {
-                self.overview = true;
-                Ok(())
-            }
             Act::ZoomIn => {
                 self.day = (self.day * 1.5).min(120.0);
                 Ok(())
@@ -475,6 +671,81 @@ impl App {
                 self.view = v;
                 Ok(())
             }
+            Act::Copy | Act::Cut => {
+                self.clipboard = rows
+                    .iter()
+                    .map(|&i| (self.doc.project.tasks[i].name.clone(), self.doc.days(i), self.doc.outline_level(i)))
+                    .collect();
+                if matches!(act, Act::Cut) {
+                    let r = rows.iter().rev().try_for_each(|&i| self.doc.delete_task(i));
+                    self.selected.clear();
+                    r
+                } else {
+                    Ok(())
+                }
+            }
+            Act::Paste => self.paste(),
+            Act::RespectLinks => rows.iter().try_for_each(|&i| {
+                // A manual task goes back to where its links put it, and stays manual.
+                if self.doc.project.tasks[i].manual.is_some() {
+                    self.doc.set_manual(i, false)?;
+                    self.doc.set_manual(i, true)
+                } else {
+                    Ok(())
+                }
+            }),
+            Act::Move(days) => rows.iter().try_for_each(|&i| {
+                if self.doc.project.tasks[i].summary {
+                    return Ok(());
+                }
+                let start = self.doc.dt(self.doc.schedule[i].start).date() + chrono::Duration::days(days);
+                self.doc.set_start(i, start)
+            }),
+            Act::AddTimeline => {
+                for &i in &rows {
+                    let uid = self.doc.project.tasks[i].uid;
+                    if !self.timeline_tasks.remove(&uid) {
+                        self.timeline_tasks.insert(uid);
+                    }
+                }
+                self.timeline = true;
+                Ok(())
+            }
+            Act::Find => {
+                self.find = Some(String::new());
+                Ok(())
+            }
+            Act::Assign => {
+                self.assign = true;
+                Ok(())
+            }
+            Act::AddResource => {
+                self.add_resource = Some(String::new());
+                Ok(())
+            }
+            Act::Report(r) => {
+                self.report = Some(r);
+                Ok(())
+            }
+            // Etapix recalculates after every edit; this just redoes it on request.
+            Act::Calc => self.doc.apply(|_| Ok(())),
+            Act::MoveProject => {
+                self.move_project = Some(self.doc.project.start.format("%d/%m/%Y").to_string());
+                Ok(())
+            }
+            Act::ZoomSelected => {
+                self.zoom_to(&rows);
+                Ok(())
+            }
+            Act::Timescale(day) => {
+                self.day = day;
+                Ok(())
+            }
+            Act::About => {
+                self.about = true;
+                Ok(())
+            }
+            Act::Undo | Act::Redo => Ok(()),
         };
         self.report(r);
     }
@@ -494,6 +765,36 @@ impl App {
         }
         self.select_only(summary);
         Ok(())
+    }
+
+    /// Inserts the copied tasks below the cursor, keeping their outline levels.
+    fn paste(&mut self) -> Result<(), String> {
+        let mut at = (self.cursor.0 + 1).min(self.n());
+        let clip = self.clipboard.clone();
+        let base = clip.iter().map(|c| c.2).min().unwrap_or(1);
+        let level0 = if at > 0 && at <= self.n() && self.cursor.0 < self.n() { self.doc.outline_level(self.cursor.0) } else { 1 };
+        for (name, days, level) in clip {
+            let row = self.doc.insert_task(at, &name, days)?;
+            let want = level0 + level - base;
+            while self.doc.outline_level(row) > want && self.doc.project.tasks[row].parent.is_some() {
+                self.doc.outdent(row)?;
+            }
+            while self.doc.outline_level(row) < want && self.doc.indent(row).is_ok() {}
+            at = row + 1;
+        }
+        Ok(())
+    }
+
+    /// Zoom so the given tasks fill the chart (Exibir > Tarefas Selecionadas).
+    fn zoom_to(&mut self, rows: &[usize]) {
+        let doc = &self.doc;
+        let (Some(lo), Some(hi)) = (rows.iter().map(|&i| doc.schedule[i].start).min(), rows.iter().map(|&i| doc.schedule[i].finish).max()) else {
+            return;
+        };
+        let days = ((doc.dt(hi) - doc.dt(lo)).num_minutes() as f32 / 1440.0).max(0.5) + 1.0;
+        self.day = (self.chart_w / days).clamp(1.5, 120.0);
+        let x = gantt::Scale::new(doc, self.day, 0.0).x(doc.dt(lo));
+        self.gantt_x = (x - self.day * 0.5).max(0.0);
     }
 
     /// Zoom so the whole project fits in the chart.
@@ -557,6 +858,11 @@ fn draw_centered(p: &egui::Painter, lines: Vec<std::sync::Arc<egui::Galley>>, ce
     }
 }
 
+/// Drawn over the icon of a disabled button.
+const FADE: Color32 = Color32::from_rgba_premultiplied(150, 153, 154, 155);
+
+const NOT_YET: &str = "Indisponível agora: precisa de uma seleção, ou o Etapix ainda não tem este comando.";
+
 fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool {
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
     let (label, size) = lines(ui.painter(), label, FontId::proportional(12.0), color);
@@ -569,22 +875,57 @@ fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool
     icons::draw(p, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 20.0), Vec2::splat(28.0)), icon);
     // Text sits between the icon and the group title, however many lines it has (at most two).
     draw_centered(p, label, rect.center().x, (rect.top() + 38.0).min(rect.bottom() - size.y), color);
-    enabled && resp.clicked()
+    if !enabled {
+        p.rect_filled(Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 20.0), Vec2::splat(30.0)), 0.0, FADE);
+        resp.on_hover_text(NOT_YET);
+        return false;
+    }
+    resp.clicked()
 }
 
 fn small_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool {
+    let resp = small_button_response(ui, icon, label, enabled);
+    enabled && resp.clicked()
+}
+
+/// A small ribbon button; `▾` after the label when it opens a menu.
+fn small_button_response(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egui::Response {
     let font = FontId::proportional(12.0);
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, TEXT);
-    let w = galley.size().x + if label.is_empty() { 24.0 } else { 30.0 };
+    // A trailing "▾" is drawn as a small triangle (not every font has the glyph).
+    let (label, menu) = match label.strip_suffix(" ▾") {
+        Some(l) => (l, true),
+        None => (label, false),
+    };
+    // A narrow window shows small buttons as icons only, with the name as a tooltip (as Project
+    // does when its ribbon does not fit).
+    let compact = COMPACT.with(|c| c.get()) && !label.is_empty();
+    let shown = if compact { "" } else { label };
+    let galley = ui.painter().layout_no_wrap(shown.to_string(), font, TEXT);
+    let w = galley.size().x + if shown.is_empty() { 24.0 } else { 30.0 } + if menu { 12.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 22.0), if enabled { Sense::click() } else { Sense::hover() });
+    if menu {
+        let c = Pos2::new(rect.right() - 8.0, rect.center().y + 1.0);
+        let color = if enabled { TEXT } else { Color32::from_gray(160) };
+        ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.5, -2.0), c + Vec2::new(3.5, -2.0), c + Vec2::new(0.0, 2.5)], color, Stroke::NONE));
+    }
     let p = ui.painter();
     if enabled && resp.hovered() {
         p.rect_filled(rect, 0.0, HOVER);
     }
-    icons::draw(p, Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 3.0), Vec2::splat(16.0)), icon);
+    let icon_rect = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 3.0), Vec2::splat(16.0));
+    icons::draw(p, icon_rect, icon);
+    if !enabled {
+        p.rect_filled(icon_rect.expand(1.0), 0.0, FADE);
+    }
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
     p.galley_with_override_text_color(Pos2::new(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0), galley, color);
-    enabled && resp.clicked()
+    let resp = if compact { resp.on_hover_text(label) } else { resp };
+    if enabled { resp } else { resp.on_hover_text(NOT_YET) }
+}
+
+thread_local! {
+    /// Set while drawing a ribbon tab that does not fit the window at full size.
+    static COMPACT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// A ribbon group: its buttons on top, its name underneath, a separator after it.
@@ -624,6 +965,25 @@ impl App {
             ui.painter().image(logo, mark, UV, Color32::WHITE);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(54.0, 26.0), Sense::hover());
             wordmark(ui.painter(), Pos2::new(rect.left() + 2.0, rect.center().y), 15.0, Color32::WHITE);
+            // Quick access toolbar: Salvar, Desfazer, Refazer (Project keeps them in the title bar).
+            ui.add_space(4.0);
+            for (icon, tip, act, enabled) in [
+                (Icon::Save, "Salvar (Ctrl+S)", Act::Save, true),
+                (Icon::Undo, "Desfazer (Ctrl+Z)", Act::Undo, self.doc.can_undo()),
+                (Icon::Redo, "Refazer (Ctrl+Y)", Act::Redo, self.doc.can_redo()),
+            ] {
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(24.0, 26.0), if enabled { Sense::click() } else { Sense::hover() });
+                if enabled && resp.hovered() {
+                    ui.painter().rect_filled(rect, 0.0, GREEN_DARK);
+                }
+                icons::draw(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(15.0)), icon);
+                if !enabled {
+                    ui.painter().rect_filled(Rect::from_center_size(rect.center(), Vec2::splat(17.0)), 0.0, GREEN.gamma_multiply(0.6));
+                }
+                if resp.on_hover_text(tip).clicked() && enabled {
+                    self.quick.push(act);
+                }
+            }
             ui.add_space(6.0);
             for (tab, name) in TABS {
                 let galley = ui.painter().layout_no_wrap(name.to_string(), font(HEADING_SEMIBOLD, 13.0), Color32::WHITE);
@@ -648,183 +1008,40 @@ impl App {
         });
     }
 
-    fn ribbon(&mut self, ui: &mut egui::Ui) -> Vec<Act> {
-        let mut acts = Vec::new();
-        let has = !self.targets().is_empty();
-        let many = self.targets().len() >= 2;
+    /// Font and size of the interface text (Tarefa > Fonte).
+    fn font_picker(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            match self.tab {
-                Tab::File => {}
-                Tab::Task => {
-                    group(ui, "Exibir", |ui| {
-                        if big_button(ui, Icon::Gantt, "Gráfico de\nGantt", true) {
-                            acts.push(Act::View(View::Gantt));
+            let shown = if self.font_name.is_empty() { "Inter (Etapix)".to_string() } else { self.font_name.clone() };
+            let mut picked = None;
+            egui::ComboBox::from_id_salt("font")
+                .selected_text(shown)
+                .width(150.0)
+                .height(420.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(self.font_name.is_empty(), "Inter (Etapix)").clicked() {
+                        picked = Some(String::new());
+                    }
+                    let names: Vec<String> = self.installed_fonts().iter().map(|f| f.name.clone()).collect();
+                    for name in names {
+                        if ui.selectable_label(self.font_name == name, &name).clicked() {
+                            picked = Some(name);
                         }
-                    });
-                    group(ui, "Cronograma", |ui| {
-                        column(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 0.0;
-                                for p in [0u8, 25, 50, 75, 100] {
-                                    if small_button(ui, Icon::Percent(p), "", has) {
-                                        acts.push(Act::Percent(p as u32));
-                                    }
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                if small_button(ui, Icon::Outdent, "", has) {
-                                    acts.push(Act::Outdent);
-                                }
-                                if small_button(ui, Icon::Indent, "", has) {
-                                    acts.push(Act::Indent);
-                                }
-                                if small_button(ui, Icon::Link, "", many) {
-                                    acts.push(Act::Link);
-                                }
-                                if small_button(ui, Icon::Unlink, "", has) {
-                                    acts.push(Act::Unlink);
-                                }
-                            });
-                        });
-                    });
-                    group(ui, "Tarefas", |ui| {
-                        if big_button(ui, Icon::Pin, "Agendar\nManualmente", has) {
-                            acts.push(Act::Manual(true));
-                        }
-                        if big_button(ui, Icon::Auto, "Agendamento\nAutomático", has) {
-                            acts.push(Act::Manual(false));
-                        }
-                    });
-                    group(ui, "Inserir", |ui| {
-                        if big_button(ui, Icon::Task, "Tarefa", true) {
-                            acts.push(Act::InsertTask);
-                        }
-                        column(ui, |ui| {
-                            if small_button(ui, Icon::Summary, "Resumo", true) {
-                                acts.push(Act::InsertSummary);
-                            }
-                            if small_button(ui, Icon::Milestone, "Marco", true) {
-                                acts.push(Act::InsertMilestone);
-                            }
-                            if small_button(ui, Icon::Delete, "Excluir", has) {
-                                acts.push(Act::Delete);
-                            }
-                        });
-                    });
-                    group(ui, "Propriedades", |ui| {
-                        if big_button(ui, Icon::Info, "Informações", has) {
-                            acts.push(Act::Info);
-                        }
-                    });
-                    group(ui, "Editar", |ui| {
-                        if big_button(ui, Icon::Scroll, "Rolar até\na Tarefa", has) {
-                            acts.push(Act::ScrollTo);
-                        }
-                    });
+                    }
+                });
+            ui.horizontal(|ui| {
+                let mut size = self.text_size;
+                if ui.add(egui::DragValue::new(&mut size).range(8.0..=24.0).speed(0.2).fixed_decimals(0).suffix(" pt")).changed() {
+                    self.text_size = size.round();
+                    self.row_h = self.row_h.max(self.text_size + 8.0);
+                    fonts::save_choice(&self.font_name, self.text_size);
                 }
-                Tab::Resource => {
-                    group(ui, "Atribuições", |ui| {
-                        if big_button(ui, Icon::Assign, "Atribuir\nRecursos", has) {
-                            self.editing = None;
-                            self.cursor.1 = Col::Res;
-                        }
-                    });
-                    group(ui, "Nível", |ui| {
-                        if big_button(ui, Icon::Level, "Nivelar\nTudo", true) {
-                            acts.push(Act::Level);
-                        }
-                        if big_button(ui, Icon::Clear, "Limpar\nNivelamento", true) {
-                            acts.push(Act::ClearLevel);
-                        }
-                    });
-                }
-                Tab::Report => {
-                    group(ui, "Exibir Relatórios", |ui| {
-                        if big_button(ui, Icon::Report, "Visão Geral\ndo Projeto", true) {
-                            acts.push(Act::Overview);
-                        }
-                    });
-                }
-                Tab::Project => {
-                    group(ui, "Propriedades", |ui| {
-                        if big_button(ui, Icon::Info, "Informações\ndo Projeto", true) {
-                            acts.push(Act::ProjectInfo);
-                        }
-                    });
-                    group(ui, "Cronograma", |ui| {
-                        if big_button(ui, Icon::Baseline, "Definir Linha\nde Base", true) {
-                            acts.push(Act::Baseline);
-                        }
-                    });
-                }
-                Tab::View => {
-                    group(ui, "Modos de Exibição de Tarefa", |ui| {
-                        if big_button(ui, Icon::Gantt, "Gráfico de\nGantt", true) {
-                            acts.push(Act::View(View::Gantt));
-                        }
-                        if big_button(ui, Icon::Sheet, "Planilha\nde Tarefas", true) {
-                            acts.push(Act::View(View::Sheet));
-                        }
-                    });
-                    group(ui, "Zoom", |ui| {
-                        column(ui, |ui| {
-                            if small_button(ui, Icon::ZoomIn, "Ampliar", true) {
-                                acts.push(Act::ZoomIn);
-                            }
-                            if small_button(ui, Icon::ZoomOut, "Reduzir", true) {
-                                acts.push(Act::ZoomOut);
-                            }
-                        });
-                        if big_button(ui, Icon::Whole, "Projeto\nInteiro", true) {
-                            acts.push(Act::Whole);
-                        }
-                    });
-                    group(ui, "Fonte", |ui| {
-                        column(ui, |ui| {
-                            let shown = if self.font_name.is_empty() { "Inter (Etapix)".to_string() } else { self.font_name.clone() };
-                            let mut picked = None;
-                            egui::ComboBox::from_id_salt("font")
-                                .selected_text(shown)
-                                .width(190.0)
-                                .height(420.0)
-                                .show_ui(ui, |ui| {
-                                    if ui.selectable_label(self.font_name.is_empty(), "Inter (Etapix)").clicked() {
-                                        picked = Some(String::new());
-                                    }
-                                    let names: Vec<String> = self.installed_fonts().iter().map(|f| f.name.clone()).collect();
-                                    for name in names {
-                                        if ui.selectable_label(self.font_name == name, &name).clicked() {
-                                            picked = Some(name);
-                                        }
-                                    }
-                                });
-                            ui.horizontal(|ui| {
-                                ui.label("Tamanho");
-                                let mut size = self.text_size;
-                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=24.0).speed(0.2).fixed_decimals(0).suffix(" pt")).changed() {
-                                    self.text_size = size.round();
-                                    self.row_h = self.row_h.max(self.text_size + 8.0);
-                                    fonts::save_choice(&self.font_name, self.text_size);
-                                }
-                            });
-                            if let Some(name) = picked {
-                                self.font_name = name;
-                                self.apply_font(ui.ctx());
-                                fonts::save_choice(&self.font_name, self.text_size);
-                            }
-                        });
-                    });
-                    group(ui, "Modo Divisão", |ui| {
-                        let mut on = self.timeline;
-                        if ui.checkbox(&mut on, "Linha do Tempo").changed() {
-                            acts.push(Act::Timeline);
-                        }
-                    });
-                }
+            });
+            if let Some(name) = picked {
+                self.font_name = name;
+                self.apply_font(ui.ctx());
+                fonts::save_choice(&self.font_name, self.text_size);
             }
         });
-        acts
     }
 
     /// Backstage (the "Arquivo" tab): a green column of commands over the whole window.
@@ -934,7 +1151,20 @@ impl App {
             p.line_segment([Pos2::new(today, band.top()), Pos2::new(today, band.bottom())], Stroke::new(1.5_f32, GREEN));
             p.text(Pos2::new(today + 3.0, band.bottom() - 7.0), Align2::LEFT_CENTER, "Hoje", small.clone(), GREEN);
         }
-        p.text(band.center() + Vec2::new(0.0, 4.0), Align2::CENTER_CENTER, "Adicione tarefas com datas à linha do tempo", FontId::proportional(12.0), Color32::from_gray(140));
+        let shown: Vec<usize> = (0..doc.project.tasks.len()).filter(|&i| self.timeline_tasks.contains(&doc.project.tasks[i].uid)).collect();
+        if shown.is_empty() {
+            p.text(band.center() + Vec2::new(0.0, 4.0), Align2::CENTER_CENTER, "Adicione tarefas com datas à linha do tempo", FontId::proportional(12.0), Color32::from_gray(140));
+        }
+        for (k, &i) in shown.iter().enumerate() {
+            let s = &doc.schedule[i];
+            let (x0, x1) = (x_of(doc.dt(s.start)).max(band.left()), x_of(doc.dt(s.finish)).min(band.right()));
+            let lanes = shown.len().min(3) as f32;
+            let h = (band.height() - 6.0) / lanes;
+            let y = band.top() + 3.0 + (k as f32 % lanes) * h;
+            let r = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1.max(x0 + 3.0), y + h - 2.0));
+            p.rect_filled(r, 2.0, if k % 2 == 0 { EMERALD } else { MINT });
+            p.with_clip_rect(r).text(Pos2::new(r.left() + 4.0, r.center().y), Align2::LEFT_CENTER, &doc.project.tasks[i].name, small.clone(), NAVY);
+        }
         p.line_segment([Pos2::new(rect.left(), rect.bottom() - 1.0), Pos2::new(rect.right(), rect.bottom() - 1.0)], Stroke::new(1.0_f32, Color32::from_gray(190)));
     }
 }
@@ -984,8 +1214,28 @@ impl App {
     /// Applies an edit; returns the row it landed on (a new task typed into an empty row goes
     /// right after the last task).
     fn commit(&mut self, e: Editing) -> usize {
+        let version = self.doc.begin();
+        let row = self.commit_edit(e);
+        self.doc.end(version);
+        row
+    }
+
+    fn commit_edit(&mut self, e: Editing) -> usize {
         let text = e.text.trim().to_string();
         let mut row = e.row;
+        // Clearing a duration or a date keeps the current value, as Project does.
+        if text.is_empty() && matches!(e.col, Col::Dur | Col::Start) {
+            return row;
+        }
+        let invalid = match e.col {
+            Col::Dur if fmt::parse_days(&text).is_none() => Some(format!("Duração inválida: {text} (use, por exemplo, 3 ou 2,5 dias)")),
+            Col::Start if fmt::parse_date(&text).is_none() => Some(format!("Data inválida: {text} (use dd/mm/aa)")),
+            _ => None,
+        };
+        if let Some(m) = invalid {
+            self.message = Some(m);
+            return row;
+        }
         if row >= self.n() {
             if text.is_empty() {
                 return row;
@@ -1101,6 +1351,8 @@ impl App {
                     Key::Delete => acts.push(Act::Delete),
                     Key::Insert => acts.push(Act::InsertTask),
                     Key::S if modifiers.ctrl => acts.push(Act::Save),
+                    Key::Z if modifiers.ctrl => acts.push(Act::Undo),
+                    Key::Y if modifiers.ctrl => acts.push(Act::Redo),
                     Key::O if modifiers.ctrl => acts.push(Act::Open),
                     Key::N if modifiers.ctrl => acts.push(Act::New),
                     _ => {}
@@ -1204,7 +1456,8 @@ impl App {
                         }
                         let clip = pb.with_clip_rect(r.intersect(body));
                         let name_font = if t.summary { self::font(SEMIBOLD, self.text_size) } else { font };
-                        cell_text(&clip, &t.name, name_font, tx, r, self.row_h, self.text_size);
+                        let name = if self.outline_numbers { format!("{} {}", outline_number(&self.doc, row), t.name) } else { t.name.clone() };
+                        cell_text(&clip, &name, name_font, tx, r, self.row_h, self.text_size);
                     }
                     Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => {
                         let clip = pb.with_clip_rect(r.shrink(1.0).intersect(body));
@@ -1249,7 +1502,9 @@ impl App {
                 if resp.double_clicked() {
                     if col == Col::Mode && row < self.n() {
                         let manual = self.doc.project.tasks[row].manual.is_none();
+                        let version = self.doc.begin();
                         let r = self.doc.set_manual(row, manual);
+                        self.doc.end(version);
                         self.report(r);
                     } else {
                         self.begin_edit(row, col, None);
@@ -1362,7 +1617,7 @@ impl App {
         for i in 0..n {
             let mid = mid_of(i);
             if mid > body.top() - self.row_h && mid < body.bottom() + self.row_h {
-                gantt::bar(&p, &scale, &self.doc, i, mid);
+                gantt::bar(&p, &scale, &self.doc, i, mid, self.gantt_opts);
             }
         }
         let resp = ui.interact(body, ui.id().with("chart"), Sense::click());
@@ -1474,6 +1729,7 @@ impl App {
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
+        self.dialogs(ctx);
         if let Some(i) = self.info.filter(|&i| i < self.n()) {
             let mut open = true;
             let t = &self.doc.project.tasks[i];
@@ -1566,12 +1822,14 @@ impl App {
 impl App {
     /// Snapshot mode: show each tab, let it settle, save the window as a PNG, then quit.
     fn snapshot_step(&mut self, ctx: &egui::Context) {
-        const STEPS: [(Tab, &str); 6] = [
+        const STEPS: [(Tab, &str); 8] = [
             (Tab::Task, "tarefa"),
             (Tab::Resource, "recurso"),
             (Tab::Report, "relatorio"),
             (Tab::Project, "projeto"),
             (Tab::View, "exibir"),
+            (Tab::Help, "ajuda"),
+            (Tab::Format, "formato"),
             (Tab::File, "arquivo"),
         ];
         let (Some((step, frames, asked)), Some(dir)) = (self.snap, snapshot::dir()) else { return };
@@ -1604,7 +1862,19 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.frame_ui(ctx);
+    }
+}
+
+impl App {
+    /// One frame of the whole interface (also driven by the user-simulation tests).
+    fn frame_ui(&mut self, ctx: &egui::Context) {
         self.snapshot_step(ctx);
+        if ctx.input(|i| i.viewport().close_requested()) && self.doc.dirty && !self.closing && self.snap.is_none() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.confirm = Some(Pending::Close);
+        }
+        self.save_changes_dialog(ctx);
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
         let mut acts = Vec::new();
         let was_editing = self.editing.is_some();
@@ -1613,7 +1883,7 @@ impl eframe::App for App {
             acts.extend(self.backstage(ctx));
         } else {
             egui::TopBottomPanel::top("ribbon")
-                .exact_height(96.0)
+                .exact_height(104.0)
                 .frame(egui::Frame::none().fill(RIBBON_BG).stroke(Stroke::new(1.0_f32, Color32::from_gray(210))))
                 .show(ctx, |ui| acts.extend(self.ribbon(ui)));
             if self.timeline {
@@ -1627,6 +1897,7 @@ impl eframe::App for App {
             self.windows(ctx);
             self.keyboard(ctx, &mut acts, was_editing);
         }
+        acts.append(&mut self.quick);
         for act in acts {
             self.run(act);
         }
