@@ -25,6 +25,17 @@ if ($claude -or (Test-Path (Join-Path $env:USERPROFILE '.claude'))) {
         & claude mcp remove --scope user etapix 2>$null | Out-Null
         & claude mcp add --scope user etapix -- $exe | Out-Null
         Write-Host '  Conector registrado no Claude Code'
+    } else {
+        # Claude Code inside the desktop app has no 'claude' command: write the user-scope entry
+        # in ~/.claude.json directly (a copy of the old file is kept next to it).
+        $json = Join-Path $env:USERPROFILE '.claude.json'
+        $data = if (Test-Path $json) { Get-Content $json -Raw -Encoding UTF8 | ConvertFrom-Json } else { New-Object psobject }
+        if (Test-Path $json) { Copy-Item $json "$json.bak-etapix" -Force }
+        if (-not $data.mcpServers) { $data | Add-Member -NotePropertyName mcpServers -NotePropertyValue (New-Object psobject) -Force }
+        $entry = [pscustomobject]@{ type = 'stdio'; command = $exe; args = @(); env = (New-Object psobject) }
+        $data.mcpServers | Add-Member -NotePropertyName etapix -NotePropertyValue $entry -Force
+        [IO.File]::WriteAllText($json, ($data | ConvertTo-Json -Depth 100), (New-Object Text.UTF8Encoding $false))
+        Write-Host '  Conector registrado no Claude Code'
     }
 }
 
