@@ -102,6 +102,37 @@ fn font(family: &str, size: f32) -> FontId {
     FontId::new(size, egui::FontFamily::Name(family.into()))
 }
 
+/// Same as `font`, for places where a local variable named `font` hides it.
+fn font_named(family: &str, size: f32) -> FontId {
+    font(family, size)
+}
+
+/// Column widths saved from the last session, or the defaults.
+fn saved_widths() -> [f32; 10] {
+    let mut w = COLUMNS.map(|c| c.2);
+    if let Some(saved) = fonts::setting("column_widths") {
+        for (slot, v) in w.iter_mut().zip(saved.split(',')) {
+            if let Ok(v) = v.trim().parse::<f32>() {
+                *slot = v.clamp(16.0, 900.0);
+            }
+        }
+    }
+    w
+}
+
+/// Cell text at `x`: one line centred vertically, or, in rows tall enough for two lines or
+/// more, wrapped to the cell's width (as Project does when you make a row taller).
+fn cell_text(p: &egui::Painter, text: &str, font: FontId, x: f32, cell: Rect, row_h: f32, size: f32) {
+    let width = (cell.right() - x - 4.0).max(10.0);
+    let galley = if row_h >= size * 2.4 {
+        p.layout(text.to_string(), font, TEXT, width)
+    } else {
+        p.layout_no_wrap(text.to_string(), font, TEXT)
+    };
+    let y = (cell.center().y - galley.size().y / 2.0).max(cell.top() + 2.0);
+    p.galley(Pos2::new(x, y), galley, TEXT);
+}
+
 // Etapix palette: deep teal (brand), slate navy (text), emerald (accents), soft grays.
 const GREEN: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
 const GREEN_DARK: Color32 = Color32::from_rgb(0x08, 0x55, 0x51);
@@ -114,6 +145,7 @@ const GRID_LINE: Color32 = Color32::from_rgb(0xDC, 0xE5, 0xEA);
 const HEADER_BG: Color32 = Color32::from_rgb(0xEE, 0xF3, 0xF6);
 const SELECTED: Color32 = Color32::from_rgb(0xDD, 0xF6, 0xEE);
 const TEXT: Color32 = NAVY;
+/// Default row height; the user can change it by dragging a row border.
 const ROW: f32 = 20.0;
 const HEAD: f32 = 40.0;
 
@@ -235,6 +267,9 @@ struct App {
     /// The picked font family ("" for Inter, the Etapix font) and the grid's text size.
     font_name: String,
     text_size: f32,
+    /// Row height and column widths, resizable by dragging the grid's borders.
+    row_h: f32,
+    col_w: [f32; 10],
 }
 
 impl App {
@@ -269,6 +304,8 @@ impl App {
             installed_fonts: None,
             font_name,
             text_size,
+            row_h: fonts::setting("row_height").and_then(|v| v.parse().ok()).unwrap_or(ROW).max(text_size + 8.0),
+            col_w: saved_widths(),
         }
     }
 
@@ -765,8 +802,9 @@ impl App {
                             ui.horizontal(|ui| {
                                 ui.label("Tamanho");
                                 let mut size = self.text_size;
-                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=14.0).speed(0.2).fixed_decimals(0).suffix(" pt")).changed() {
+                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=24.0).speed(0.2).fixed_decimals(0).suffix(" pt")).changed() {
                                     self.text_size = size.round();
+                                    self.row_h = self.row_h.max(self.text_size + 8.0);
                                     fonts::save_choice(&self.font_name, self.text_size);
                                 }
                             });
@@ -983,9 +1021,45 @@ impl App {
         row
     }
 
+    /// The grid's columns with their current widths.
+    fn columns(&self) -> [(Col, &'static str, f32); 10] {
+        let mut cols = COLUMNS;
+        for (c, w) in cols.iter_mut().zip(self.col_w) {
+            c.2 = w;
+        }
+        cols
+    }
+
+    fn save_layout(&self) {
+        let widths = self.col_w.iter().map(|w| format!("{w:.0}")).collect::<Vec<_>>().join(",");
+        fonts::save_settings(&[("row_height", format!("{:.0}", self.row_h)), ("column_widths", widths)]);
+    }
+
+    /// The width that shows the whole column (header and every task), as a double-click on a
+    /// column border does in Project.
+    fn fit_width(&self, ui: &egui::Ui, col: Col) -> f32 {
+        let font = FontId::proportional(self.text_size);
+        let measure = |t: &str, f: FontId| ui.fonts(|fonts| fonts.layout_no_wrap(t.to_string(), f, TEXT).size().x);
+        let header = COLUMNS.iter().find(|c| c.0 == col).map(|c| c.1).unwrap_or("");
+        let mut w = header.split('\n').map(|l| measure(l, FontId::proportional(self.text_size.min(12.0)))).fold(0.0, f32::max) + 12.0;
+        for i in 0..self.n() {
+            let t = &self.doc.project.tasks[i];
+            let cell = match col {
+                Col::Name => {
+                    let f = if t.summary { font_named(SEMIBOLD, self.text_size) } else { font.clone() };
+                    measure(&t.name, f) + (self.doc.outline_level(i) - 1) as f32 * 14.0 + if t.summary { 12.0 } else { 0.0 } + 12.0
+                }
+                Col::Num | Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => measure(&self.cell_text(i, col), font.clone()) + 12.0,
+                _ => 0.0,
+            };
+            w = w.max(cell);
+        }
+        w.clamp(20.0, 900.0)
+    }
+
     fn col_x(&self, col: Col) -> (f32, f32) {
         let mut x = 0.0;
-        for (c, _, w) in COLUMNS {
+        for (c, _, w) in self.columns() {
             if c == col {
                 return (x, w);
             }
@@ -1054,7 +1128,7 @@ impl App {
         let n = self.n();
         let head = Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + HEAD));
         let body = Rect::from_min_max(Pos2::new(area.left(), head.bottom()), area.max);
-        let total_w: f32 = COLUMNS.iter().map(|c| c.2).sum();
+        let total_w: f32 = self.col_w.iter().sum();
         self.grid_x = self.grid_x.clamp(0.0, (total_w - area.width()).max(0.0));
         let left = area.left() - self.grid_x;
         let p = ui.painter_at(area);
@@ -1063,7 +1137,7 @@ impl App {
         // Header.
         p.rect_filled(head, 0.0, HEADER_BG);
         let mut x = left;
-        for (col, title, w) in COLUMNS {
+        for (col, title, w) in self.columns() {
             let r = Rect::from_min_size(Pos2::new(x, head.top()), Vec2::new(w, HEAD));
             p.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0_f32, GRID_LINE));
             let color = if col == Col::Add { Color32::from_gray(110) } else { TEXT };
@@ -1080,18 +1154,18 @@ impl App {
         p.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0_f32, Color32::from_gray(170)));
 
         // Rows: the tasks, then empty rows to type into.
-        let visible = (body.height() / ROW).ceil() as usize + 1;
-        let first = (self.scroll_y / ROW).floor() as usize;
+        let visible = (body.height() / self.row_h).ceil() as usize + 1;
+        let first = (self.scroll_y / self.row_h).floor() as usize;
         let pb = ui.painter_at(body);
         for row in first..first + visible {
-            let y = body.top() + row as f32 * ROW - self.scroll_y;
-            let line = Rect::from_min_size(Pos2::new(left, y), Vec2::new(total_w, ROW));
+            let y = body.top() + row as f32 * self.row_h - self.scroll_y;
+            let line = Rect::from_min_size(Pos2::new(left, y), Vec2::new(total_w, self.row_h));
             if self.selected.contains(&row) {
                 pb.rect_filled(line, 0.0, SELECTED);
             }
             let mut x = left;
-            for (col, _, w) in COLUMNS {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, ROW));
+            for (col, _, w) in self.columns() {
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, self.row_h));
                 x += w;
                 if col == Col::Num {
                     pb.rect_filled(r, 0.0, if self.selected.contains(&row) { Color32::from_rgb(0xC3, 0xEE, 0xDF) } else { HEADER_BG });
@@ -1130,13 +1204,17 @@ impl App {
                         }
                         let clip = pb.with_clip_rect(r.intersect(body));
                         let name_font = if t.summary { self::font(SEMIBOLD, self.text_size) } else { font };
-                        clip.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &t.name, name_font, TEXT);
+                        cell_text(&clip, &t.name, name_font, tx, r, self.row_h, self.text_size);
                     }
                     Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => {
                         let clip = pb.with_clip_rect(r.shrink(1.0).intersect(body));
-                        let align = if col == Col::Dur { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
-                        let pos = if col == Col::Dur { Pos2::new(r.right() - 4.0, r.center().y) } else { Pos2::new(r.left() + 4.0, r.center().y) };
-                        clip.text(pos, align, self.cell_text(row, col), font, TEXT);
+                        if matches!(col, Col::Pred | Col::Res) {
+                            cell_text(&clip, &self.cell_text(row, col), font, r.left() + 4.0, r, self.row_h, self.text_size);
+                        } else {
+                            let align = if col == Col::Dur { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
+                            let pos = if col == Col::Dur { Pos2::new(r.right() - 4.0, r.center().y) } else { Pos2::new(r.left() + 4.0, r.center().y) };
+                            clip.text(pos, align, self.cell_text(row, col), font, TEXT);
+                        }
                     }
                     Col::Add => {}
                 }
@@ -1144,8 +1222,8 @@ impl App {
         }
         // The active cell: green frame, as in Project.
         let (cx, cw) = self.col_x(self.cursor.1);
-        let cy = body.top() + self.cursor.0 as f32 * ROW - self.scroll_y;
-        let cell = Rect::from_min_size(Pos2::new(left + cx, cy), Vec2::new(cw, ROW));
+        let cy = body.top() + self.cursor.0 as f32 * self.row_h - self.scroll_y;
+        let cell = Rect::from_min_size(Pos2::new(left + cx, cy), Vec2::new(cw, self.row_h));
         if self.editing.is_none() {
             pb.rect_stroke(cell.shrink(0.5), 0.0, Stroke::new(2.0_f32, GREEN));
         }
@@ -1154,10 +1232,10 @@ impl App {
         let resp = ui.interact(body, ui.id().with("grid"), Sense::click());
         if let Some(pos) = resp.interact_pointer_pos() {
             if resp.clicked() || resp.double_clicked() {
-                let row = ((pos.y - body.top() + self.scroll_y) / ROW).floor().max(0.0) as usize;
+                let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize;
                 let mut col = Col::Name;
                 let mut x = left;
-                for (c, _, w) in COLUMNS {
+                for (c, _, w) in self.columns() {
                     if pos.x >= x && pos.x < x + w {
                         col = c;
                     }
@@ -1180,12 +1258,54 @@ impl App {
             }
         }
 
+        // Column borders in the header: drag to resize, double-click to fit the contents.
+        let mut x = left;
+        for (i, &(col, _, _)) in COLUMNS.iter().enumerate() {
+            x += self.col_w[i];
+            let handle = Rect::from_center_size(Pos2::new(x, head.center().y), Vec2::new(8.0, HEAD));
+            if !area.contains(handle.center()) {
+                continue;
+            }
+            let r = ui.interact(handle, ui.id().with(("column-width", i)), Sense::click_and_drag());
+            if r.hovered() || r.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+            if r.dragged() {
+                self.col_w[i] = (self.col_w[i] + r.drag_delta().x).clamp(16.0, 900.0);
+            }
+            if r.double_clicked() {
+                self.col_w[i] = self.fit_width(ui, col);
+            }
+            if r.drag_stopped() || r.double_clicked() {
+                self.save_layout();
+            }
+        }
+        // Row borders in the row-number column: drag to change the row height.
+        let (nx, nw) = self.col_x(Col::Num);
+        for row in first..first + visible {
+            let y = body.top() + (row + 1) as f32 * self.row_h - self.scroll_y;
+            let handle = Rect::from_center_size(Pos2::new(left + nx + nw / 2.0, y), Vec2::new(nw, 6.0));
+            if !body.contains(handle.center()) {
+                continue;
+            }
+            let r = ui.interact(handle, ui.id().with(("row-height", row)), Sense::drag());
+            if r.hovered() || r.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+            if r.dragged() {
+                self.row_h = (self.row_h + r.drag_delta().y).clamp(self.text_size + 8.0, 160.0);
+            }
+            if r.drag_stopped() {
+                self.save_layout();
+            }
+        }
+
         // The cell being edited.
         if let Some((erow, ecol)) = self.editing.as_ref().map(|e| (e.row, e.col)) {
             let (ex, ew) = self.col_x(ecol);
-            let ey = body.top() + erow as f32 * ROW - self.scroll_y;
+            let ey = body.top() + erow as f32 * self.row_h - self.scroll_y;
             let e = self.editing.as_mut().unwrap();
-            let r = Rect::from_min_size(Pos2::new(left + ex, ey), Vec2::new(ew, ROW));
+            let r = Rect::from_min_size(Pos2::new(left + ex, ey), Vec2::new(ew, self.row_h));
             ui.painter().rect_filled(r, 0.0, Color32::WHITE);
             ui.painter().rect_stroke(r, 0.0, Stroke::new(1.5_f32, GREEN));
             let mut out = None;
@@ -1234,20 +1354,20 @@ impl App {
         gantt::background(&p, body, &scale, &self.doc);
         let n = self.n();
         for row in self.selected.iter().copied() {
-            let y = body.top() + row as f32 * ROW - self.scroll_y;
-            p.rect_filled(Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), ROW)), 0.0, SELECTED.gamma_multiply(0.6));
+            let y = body.top() + row as f32 * self.row_h - self.scroll_y;
+            p.rect_filled(Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), self.row_h)), 0.0, SELECTED.gamma_multiply(0.6));
         }
-        let mid_of = |i: usize| body.top() + i as f32 * ROW - self.scroll_y + ROW / 2.0;
-        gantt::links(&p, &scale, &self.doc, mid_of, ROW);
+        let mid_of = |i: usize| body.top() + i as f32 * self.row_h - self.scroll_y + self.row_h / 2.0;
+        gantt::links(&p, &scale, &self.doc, mid_of, self.row_h);
         for i in 0..n {
             let mid = mid_of(i);
-            if mid > body.top() - ROW && mid < body.bottom() + ROW {
+            if mid > body.top() - self.row_h && mid < body.bottom() + self.row_h {
                 gantt::bar(&p, &scale, &self.doc, i, mid);
             }
         }
         let resp = ui.interact(body, ui.id().with("chart"), Sense::click());
         if let Some(pos) = resp.hover_pos() {
-            let row = ((pos.y - body.top() + self.scroll_y) / ROW).floor() as usize;
+            let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor() as usize;
             if row < n {
                 let s = &self.doc.schedule[row];
                 let (x0, x1) = (scale.x(self.doc.dt(s.start)), scale.x(self.doc.dt(s.finish)));
@@ -1259,7 +1379,7 @@ impl App {
         }
         if resp.clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
-                let row = ((pos.y - body.top() + self.scroll_y) / ROW).floor().max(0.0) as usize;
+                let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize;
                 let mods = ui.input(|i| i.modifiers);
                 let col = self.cursor.1;
                 self.row_click(row, col, mods);
@@ -1283,7 +1403,7 @@ impl App {
         let area = Rect::from_min_max(Pos2::new(label.right(), full.top()), full.max);
 
         let n = self.n();
-        let content_h = (n + 30) as f32 * ROW;
+        let content_h = (n + 30) as f32 * self.row_h;
         let (grid, chart) = if self.view == View::Gantt {
             let split = self.split.clamp(120.0, (area.width() - 120.0).max(120.0));
             let grid = Rect::from_min_max(area.min, Pos2::new(area.left() + split, area.bottom()));

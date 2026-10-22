@@ -103,18 +103,38 @@ fn settings_path() -> Option<PathBuf> {
     dir.map(|d| d.join("settings.txt"))
 }
 
+/// All saved settings, in file order.
+fn settings() -> Vec<(String, String)> {
+    let text = settings_path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).collect()
+}
+
+/// A saved setting.
+pub fn setting(key: &str) -> Option<String> {
+    settings().into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+/// Saves settings, keeping the others already in the file.
+pub fn save_settings(values: &[(&str, String)]) {
+    let Some(p) = settings_path() else { return };
+    let mut all = settings();
+    for (k, v) in values {
+        match all.iter_mut().find(|(key, _)| key == k) {
+            Some(e) => e.1 = v.clone(),
+            None => all.push((k.to_string(), v.clone())),
+        }
+    }
+    let _ = std::fs::create_dir_all(p.parent().unwrap());
+    let _ = std::fs::write(p, all.iter().map(|(k, v)| format!("{k}={v}\n")).collect::<String>());
+}
+
 /// The saved font choice: family name (empty for the brand font) and text size.
 pub fn load_choice() -> (String, f32) {
-    let text = settings_path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
-    let get = |k: &str| text.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).map(str::trim).unwrap_or("").to_string();
-    (get("font"), get("font_size").parse().unwrap_or(12.0))
+    (setting("font").unwrap_or_default(), setting("font_size").and_then(|v| v.parse().ok()).unwrap_or(12.0))
 }
 
 pub fn save_choice(family: &str, size: f32) {
-    if let Some(p) = settings_path() {
-        let _ = std::fs::create_dir_all(p.parent().unwrap());
-        let _ = std::fs::write(p, format!("font={family}\nfont_size={size}\n"));
-    }
+    save_settings(&[("font", family.to_string()), ("font_size", size.to_string())]);
 }
 
 #[cfg(all(test, windows))]
