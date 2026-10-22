@@ -36,15 +36,49 @@ fn main() -> eframe::Result {
     )
 }
 
-/// Light theme and Segoe UI (Windows' UI font, as Project uses) when it is installed.
+/// The brand typefaces, built into the executable (both under the SIL Open Font License, see
+/// `assets/fonts`): Inter for the interface, Plus Jakarta Sans for headings and the wordmark.
+const FONTS: [(&str, &[u8]); 5] = [
+    ("inter", include_bytes!("../assets/fonts/Inter-Regular.ttf")),
+    ("inter-medium", include_bytes!("../assets/fonts/Inter-Medium.ttf")),
+    ("inter-semibold", include_bytes!("../assets/fonts/Inter-SemiBold.ttf")),
+    ("jakarta-semibold", include_bytes!("../assets/fonts/PlusJakartaSans-SemiBold.ttf")),
+    ("jakarta-bold", include_bytes!("../assets/fonts/PlusJakartaSans-Bold.ttf")),
+];
+
+/// Light theme and the brand fonts. Segoe UI, when installed, backs them up for symbols they lack.
 fn setup_style(ctx: &egui::Context) {
     ctx.set_visuals(egui::Visuals::light());
-    if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf") {
-        let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert("segoe".into(), egui::FontData::from_owned(bytes));
-        fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "segoe".into());
-        ctx.set_fonts(fonts);
+    let mut fonts = egui::FontDefinitions::default();
+    for (name, bytes) in FONTS {
+        fonts.font_data.insert(name.into(), egui::FontData::from_static(bytes));
     }
+    let fallback: Vec<String> = fonts.families[&egui::FontFamily::Proportional].clone();
+    let mut segoe = Vec::new();
+    if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf") {
+        fonts.font_data.insert("segoe".into(), egui::FontData::from_owned(bytes));
+        segoe.push("segoe".to_string());
+    }
+    for (family, first) in [
+        (egui::FontFamily::Proportional, "inter"),
+        (egui::FontFamily::Name(MEDIUM.into()), "inter-medium"),
+        (egui::FontFamily::Name(SEMIBOLD.into()), "inter-semibold"),
+        (egui::FontFamily::Name(HEADING.into()), "jakarta-bold"),
+        (egui::FontFamily::Name(HEADING_SEMIBOLD.into()), "jakarta-semibold"),
+    ] {
+        let chain = std::iter::once(first.to_string()).chain(segoe.iter().cloned()).chain(fallback.iter().cloned()).collect();
+        fonts.families.insert(family, chain);
+    }
+    ctx.set_fonts(fonts);
+}
+
+const MEDIUM: &str = "medium";
+const SEMIBOLD: &str = "semibold";
+const HEADING: &str = "heading";
+const HEADING_SEMIBOLD: &str = "heading-semibold";
+
+fn font(family: &str, size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(family.into()))
 }
 
 // Etapix palette: deep teal (brand), slate navy (text), emerald (accents), soft grays.
@@ -398,16 +432,14 @@ const UV: Rect = Rect { min: Pos2::ZERO, max: Pos2 { x: 1.0, y: 1.0 } };
 
 /// "Etapix" with the i in emerald, as in the logo; `pos` is the left end, vertically centred.
 fn wordmark(p: &egui::Painter, pos: Pos2, size: f32, color: Color32) {
-    let font = FontId::proportional(size);
+    let font = font(HEADING, size);
     let mut job = egui::text::LayoutJob::default();
     for (part, c) in [("Etap", color), ("i", EMERALD), ("x", color)] {
         job.append(part, 0.0, egui::TextFormat::simple(font.clone(), c));
     }
     let galley = p.layout_job(job);
     let at = Pos2::new(pos.x, pos.y - galley.size().y / 2.0);
-    // Bold weight: the same text twice, a fraction of a pixel apart.
-    p.galley(at, galley.clone(), color);
-    p.galley(at + Vec2::new(size / 24.0, 0.0), galley, color);
+    p.galley(at, galley, color);
 }
 
 impl App {
@@ -487,8 +519,7 @@ impl App {
             wordmark(ui.painter(), Pos2::new(rect.left() + 2.0, rect.center().y), 15.0, Color32::WHITE);
             ui.add_space(6.0);
             for (tab, name) in TABS {
-                let font = FontId::proportional(13.0);
-                let galley = ui.painter().layout_no_wrap(name.to_string(), font, Color32::WHITE);
+                let galley = ui.painter().layout_no_wrap(name.to_string(), font(HEADING_SEMIBOLD, 13.0), Color32::WHITE);
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 22.0, 26.0), Sense::click());
                 let active = self.tab == tab && tab != Tab::File;
                 let p = ui.painter();
@@ -674,14 +705,14 @@ impl App {
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, 0.0, GREEN_DARK);
                 }
-                ui.painter().text(Pos2::new(rect.left() + 24.0, rect.center().y), Align2::LEFT_CENTER, name, FontId::proportional(15.0), Color32::WHITE);
+                ui.painter().text(Pos2::new(rect.left() + 24.0, rect.center().y), Align2::LEFT_CENTER, name, font(HEADING_SEMIBOLD, 15.0), Color32::WHITE);
                 if resp.clicked() {
                     acts.push(act);
                 }
             }
         });
         egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::WHITE).inner_margin(32.0)).show(ctx, |ui| {
-            ui.label(egui::RichText::new("Novo").size(30.0).color(TEXT));
+            ui.label(egui::RichText::new("Novo").font(font(HEADING, 30.0)).color(TEXT));
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(160.0, 190.0), Sense::click());
@@ -992,11 +1023,8 @@ impl App {
                             tx += 12.0;
                         }
                         let clip = pb.with_clip_rect(r.intersect(body));
-                        clip.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &t.name, font.clone(), TEXT);
-                        if t.summary {
-                            // Summaries in bold: the same text again, half a pixel to the right.
-                            clip.text(Pos2::new(tx + 0.6, r.center().y), Align2::LEFT_CENTER, &t.name, font, TEXT);
-                        }
+                        let name_font = if t.summary { self::font(SEMIBOLD, 12.0) } else { font };
+                        clip.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &t.name, name_font, TEXT);
                     }
                     Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => {
                         let clip = pb.with_clip_rect(r.shrink(1.0).intersect(body));

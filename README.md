@@ -64,6 +64,10 @@ next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associatio
   Projeto: project start date and baseline. Relatório: project overview. Exibir: Gantt or task
   sheet, zoom, whole project, timeline on or off.
 
+The interface uses the Etapix typefaces, built into the executable: Inter (text) and Plus Jakarta
+Sans (headings and wordmark), both under the SIL Open Font License 1.1 (licences in
+`app/assets/fonts`).
+
 `etapix-setup` is a per-user installer with the app built in: it installs to
 `%LOCALAPPDATA%\Programs\etapix` without admin rights, adds a Start Menu shortcut and an entry in
 Windows' installed apps; uninstalling removes all three. `/silent` skips every dialog (for IT
