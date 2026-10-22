@@ -2,10 +2,10 @@
 
 use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
-pub const BLUE: Color32 = Color32::from_rgb(68, 114, 196);
-pub const LIGHT_BLUE: Color32 = Color32::from_rgb(142, 180, 227);
-pub const GREEN: Color32 = Color32::from_rgb(33, 115, 70);
-pub const DARK: Color32 = Color32::from_rgb(64, 64, 64);
+pub const BLUE: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
+pub const LIGHT_BLUE: Color32 = Color32::from_rgb(0x4E, 0xE7, 0xC7);
+pub const GREEN: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
+pub const DARK: Color32 = Color32::from_rgb(0x1E, 0x2F, 0x3E);
 pub const RED: Color32 = Color32::from_rgb(196, 62, 54);
 
 #[derive(Clone, Copy, PartialEq, Eq)]

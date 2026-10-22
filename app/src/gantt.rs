@@ -9,15 +9,15 @@ use eframe::egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke};
 use crate::doc::Doc;
 use crate::fmt;
 
-pub const BAR: Color32 = Color32::from_rgb(138, 180, 232);
-pub const BAR_EDGE: Color32 = Color32::from_rgb(91, 138, 204);
-const MANUAL: Color32 = Color32::from_rgb(160, 206, 214);
-const MANUAL_EDGE: Color32 = Color32::from_rgb(70, 150, 170);
-const PROGRESS: Color32 = Color32::from_rgb(38, 76, 140);
-const NONWORKING: Color32 = Color32::from_rgb(234, 234, 234);
-const LINE: Color32 = Color32::from_rgb(212, 212, 212);
-const TEXT: Color32 = Color32::from_rgb(38, 38, 38);
-const TODAY: Color32 = Color32::from_rgb(33, 115, 70);
+pub const BAR: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
+pub const BAR_EDGE: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
+const MANUAL: Color32 = Color32::from_rgb(0xA6, 0xF0, 0xDF);
+const MANUAL_EDGE: Color32 = Color32::from_rgb(0x2B, 0xAF, 0x9A);
+const PROGRESS: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
+const NONWORKING: Color32 = Color32::from_rgb(0xEE, 0xF3, 0xF6);
+const LINE: Color32 = Color32::from_rgb(0xDC, 0xE5, 0xEA);
+const TEXT: Color32 = Color32::from_rgb(0x1E, 0x2F, 0x3E);
+const TODAY: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
 
 /// Horizontal mapping: the chart starts on the Sunday before the project start.
 pub struct Scale {
@@ -138,16 +138,16 @@ pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32) {
     let (x0, x1) = (s.x(doc.dt(sch.start)), s.x(doc.dt(sch.finish)));
     let font = FontId::proportional(11.0);
     if t.summary {
-        p.rect_filled(Rect::from_min_max(Pos2::new(x0, mid - 4.0), Pos2::new(x1, mid + 1.0)), 0.0, Color32::BLACK);
+        p.rect_filled(Rect::from_min_max(Pos2::new(x0, mid - 4.0), Pos2::new(x1, mid + 1.0)), 0.0, TEXT);
         for x in [x0, x1] {
-            p.add(Shape::convex_polygon(vec![Pos2::new(x - 4.0, mid - 4.0), Pos2::new(x + 4.0, mid - 4.0), Pos2::new(x, mid + 6.0)], Color32::BLACK, Stroke::NONE));
+            p.add(Shape::convex_polygon(vec![Pos2::new(x - 4.0, mid - 4.0), Pos2::new(x + 4.0, mid - 4.0), Pos2::new(x, mid + 6.0)], TEXT, Stroke::NONE));
         }
         return;
     }
     if t.duration == 0 {
         p.add(Shape::convex_polygon(
             vec![Pos2::new(x0, mid - 6.0), Pos2::new(x0 + 6.0, mid), Pos2::new(x0, mid + 6.0), Pos2::new(x0 - 6.0, mid)],
-            Color32::BLACK,
+            TEXT,
             Stroke::NONE,
         ));
         p.text(Pos2::new(x0 + 10.0, mid), Align2::LEFT_CENTER, doc.dt(sch.start).format("%d/%m").to_string(), font, TEXT);
@@ -184,7 +184,7 @@ pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32) {
 
 /// Finish-to-start arrows (the other link types are drawn the same way from their anchors).
 pub fn links(p: &Painter, s: &Scale, doc: &Doc, mid_of: impl Fn(usize) -> f32, row: f32) {
-    let stroke = Stroke::new(1.0_f32, Color32::from_rgb(50, 90, 160));
+    let stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x3D, 0x5A, 0x6C));
     for (i, t) in doc.project.tasks.iter().enumerate() {
         let xs = s.x(doc.dt(doc.schedule[i].start));
         let ys = mid_of(i);

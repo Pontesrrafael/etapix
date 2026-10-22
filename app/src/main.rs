@@ -8,6 +8,8 @@ mod doc;
 mod fmt;
 mod gantt;
 mod icons;
+/// The Etapix mark and palette.
+mod logo;
 mod mpp;
 
 use std::collections::BTreeSet;
@@ -18,7 +20,9 @@ use icons::Icon;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 800.0]).with_title("Etapix"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 800.0])
+            .with_title("Etapix")
+            .with_icon(egui::IconData { rgba: logo::rgba(64), width: 64, height: 64 }),
         ..Default::default()
     };
     let path = std::env::args().nth(1);
@@ -43,12 +47,18 @@ fn setup_style(ctx: &egui::Context) {
     }
 }
 
-const GREEN: Color32 = Color32::from_rgb(33, 115, 70);
-const RIBBON_BG: Color32 = Color32::from_rgb(243, 243, 243);
-const GRID_LINE: Color32 = Color32::from_rgb(212, 212, 212);
-const HEADER_BG: Color32 = Color32::from_rgb(246, 246, 246);
-const SELECTED: Color32 = Color32::from_rgb(214, 228, 243);
-const TEXT: Color32 = Color32::from_rgb(38, 38, 38);
+// Etapix palette: deep teal (brand), slate navy (text), emerald (accents), soft grays.
+const GREEN: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
+const GREEN_DARK: Color32 = Color32::from_rgb(0x08, 0x55, 0x51);
+const NAVY: Color32 = Color32::from_rgb(0x1E, 0x2F, 0x3E);
+const EMERALD: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
+const MINT: Color32 = Color32::from_rgb(0x4E, 0xE7, 0xC7);
+const RIBBON_BG: Color32 = Color32::from_rgb(0xF4, 0xF8, 0xFA);
+const HOVER: Color32 = Color32::from_rgb(0xDF, 0xEE, 0xEC);
+const GRID_LINE: Color32 = Color32::from_rgb(0xDC, 0xE5, 0xEA);
+const HEADER_BG: Color32 = Color32::from_rgb(0xEE, 0xF3, 0xF6);
+const SELECTED: Color32 = Color32::from_rgb(0xDD, 0xF6, 0xEE);
+const TEXT: Color32 = NAVY;
 const ROW: f32 = 20.0;
 const HEAD: f32 = 40.0;
 
@@ -162,6 +172,7 @@ struct App {
     scroll_to_start: bool,
     /// The chart's last laid-out width, used by "Projeto Inteiro".
     chart_w: f32,
+    logo: Option<egui::TextureHandle>,
 }
 
 impl App {
@@ -190,6 +201,7 @@ impl App {
             overview: false,
             scroll_to_start: true,
             chart_w: 700.0,
+            logo: None,
         }
     }
 
@@ -381,6 +393,34 @@ impl App {
 // ---------------------------------------------------------------------------------------------
 // Ribbon
 
+/// Texture coordinates of a whole image.
+const UV: Rect = Rect { min: Pos2::ZERO, max: Pos2 { x: 1.0, y: 1.0 } };
+
+/// "Etapix" with the i in emerald, as in the logo; `pos` is the left end, vertically centred.
+fn wordmark(p: &egui::Painter, pos: Pos2, size: f32, color: Color32) {
+    let font = FontId::proportional(size);
+    let mut job = egui::text::LayoutJob::default();
+    for (part, c) in [("Etap", color), ("i", EMERALD), ("x", color)] {
+        job.append(part, 0.0, egui::TextFormat::simple(font.clone(), c));
+    }
+    let galley = p.layout_job(job);
+    let at = Pos2::new(pos.x, pos.y - galley.size().y / 2.0);
+    // Bold weight: the same text twice, a fraction of a pixel apart.
+    p.galley(at, galley.clone(), color);
+    p.galley(at + Vec2::new(size / 24.0, 0.0), galley, color);
+}
+
+impl App {
+    fn logo_texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        self.logo
+            .get_or_insert_with(|| {
+                let image = egui::ColorImage::from_rgba_unmultiplied([128, 128], &logo::rgba(128));
+                ctx.load_texture("etapix-logo", image, egui::TextureOptions::LINEAR)
+            })
+            .id()
+    }
+}
+
 fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool {
     let font = FontId::proportional(12.0);
     let galley = ui.painter().layout(label.to_string(), font, TEXT, 80.0);
@@ -388,7 +428,7 @@ fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 72.0), if enabled { Sense::click() } else { Sense::hover() });
     let p = ui.painter();
     if enabled && resp.hovered() {
-        p.rect_filled(rect, 0.0, Color32::from_rgb(218, 218, 218));
+        p.rect_filled(rect, 0.0, HOVER);
     }
     icons::draw(p, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 21.0), Vec2::splat(30.0)), icon);
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
@@ -403,7 +443,7 @@ fn small_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bo
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 22.0), if enabled { Sense::click() } else { Sense::hover() });
     let p = ui.painter();
     if enabled && resp.hovered() {
-        p.rect_filled(rect, 0.0, Color32::from_rgb(218, 218, 218));
+        p.rect_filled(rect, 0.0, HOVER);
     }
     icons::draw(p, Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 3.0), Vec2::splat(16.0)), icon);
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
@@ -438,8 +478,14 @@ impl App {
     fn tabs(&mut self, ui: &mut egui::Ui) {
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, GREEN);
+        let logo = self.logo_texture(ui.ctx());
         ui.horizontal(|ui| {
-            ui.add_space(4.0);
+            ui.add_space(8.0);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 26.0), Sense::hover());
+            ui.painter().image(logo, Rect::from_center_size(rect.center(), Vec2::splat(18.0)), UV, Color32::WHITE);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(54.0, 26.0), Sense::hover());
+            wordmark(ui.painter(), Pos2::new(rect.left() + 2.0, rect.center().y), 15.0, Color32::WHITE);
+            ui.add_space(6.0);
             for (tab, name) in TABS {
                 let font = FontId::proportional(13.0);
                 let galley = ui.painter().layout_no_wrap(name.to_string(), font, Color32::WHITE);
@@ -449,7 +495,7 @@ impl App {
                 if active {
                     p.rect_filled(rect, 0.0, RIBBON_BG);
                 } else if resp.hovered() {
-                    p.rect_filled(rect, 0.0, Color32::from_rgb(25, 90, 55));
+                    p.rect_filled(rect, 0.0, GREEN_DARK);
                 }
                 let color = if active { GREEN } else { Color32::WHITE };
                 p.galley_with_override_text_color(rect.center() - galley.size() / 2.0, galley, color);
@@ -611,8 +657,13 @@ impl App {
     /// Backstage (the "Arquivo" tab): a green column of commands over the whole window.
     fn backstage(&mut self, ctx: &egui::Context) -> Vec<Act> {
         let mut acts = Vec::new();
-        egui::SidePanel::left("backstage").exact_width(170.0).resizable(false).frame(egui::Frame::none().fill(GREEN)).show(ctx, |ui| {
-            ui.add_space(12.0);
+        egui::SidePanel::left("backstage").exact_width(170.0).resizable(false).frame(egui::Frame::none().fill(NAVY)).show(ctx, |ui| {
+            ui.add_space(14.0);
+            let logo = self.logo_texture(ctx);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(170.0, 40.0), Sense::hover());
+            ui.painter().image(logo, Rect::from_min_size(rect.min + Vec2::new(18.0, 4.0), Vec2::splat(32.0)), UV, Color32::WHITE);
+            wordmark(ui.painter(), Pos2::new(rect.left() + 58.0, rect.center().y), 22.0, Color32::WHITE);
+            ui.add_space(8.0);
             let back = ui.add(egui::Label::new(egui::RichText::new("  ←").size(22.0).color(Color32::WHITE)).sense(Sense::click()));
             if back.clicked() {
                 self.tab = Tab::Task;
@@ -621,7 +672,7 @@ impl App {
             for (act, name) in [(Act::New, "Novo"), (Act::Open, "Abrir"), (Act::Save, "Salvar"), (Act::SaveAs, "Salvar como")] {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(170.0, 36.0), Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(25, 90, 55));
+                    ui.painter().rect_filled(rect, 0.0, GREEN_DARK);
                 }
                 ui.painter().text(Pos2::new(rect.left() + 24.0, rect.center().y), Align2::LEFT_CENTER, name, FontId::proportional(15.0), Color32::WHITE);
                 if resp.clicked() {
@@ -672,7 +723,7 @@ impl App {
         let finish = doc.dt(doc.schedule.iter().map(|s| s.finish).max().unwrap_or(doc.cals.project_start));
         let start = start.min(doc.project.start);
         let band = Rect::from_min_max(Pos2::new(rect.left() + 110.0, rect.top() + 22.0), Pos2::new(rect.right() - 110.0, rect.bottom() - 10.0));
-        p.rect_filled(band, 0.0, Color32::from_rgb(242, 242, 242));
+        p.rect_filled(band, 0.0, HEADER_BG);
         p.rect_stroke(band, 0.0, Stroke::new(1.0_f32, Color32::from_gray(200)));
         let small = FontId::proportional(11.0);
         let label = |x: f32, align: Align2, title: &str, date: String| {
@@ -906,7 +957,7 @@ impl App {
                 let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, ROW));
                 x += w;
                 if col == Col::Num {
-                    pb.rect_filled(r, 0.0, if self.selected.contains(&row) { Color32::from_rgb(198, 216, 236) } else { HEADER_BG });
+                    pb.rect_filled(r, 0.0, if self.selected.contains(&row) { Color32::from_rgb(0xC3, 0xEE, 0xDF) } else { HEADER_BG });
                 }
                 pb.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0_f32, GRID_LINE));
                 pb.line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(1.0_f32, GRID_LINE));
@@ -921,7 +972,7 @@ impl App {
                     }
                     Col::Ind => {
                         if t.progress.percent_complete >= 100 {
-                            let c = Stroke::new(2.0_f32, Color32::from_rgb(60, 150, 60));
+                            let c = Stroke::new(2.0_f32, EMERALD);
                             pb.line_segment([r.center() + Vec2::new(-5.0, 0.0), r.center() + Vec2::new(-1.0, 4.0)], c);
                             pb.line_segment([r.center() + Vec2::new(-1.0, 4.0), r.center() + Vec2::new(6.0, -5.0)], c);
                         } else if !matches!(t.constraint, pjsched::model::Constraint::AsSoonAsPossible) {
@@ -1087,14 +1138,14 @@ impl App {
         // The vertical view name on the left edge.
         let label = Rect::from_min_size(full.min, Vec2::new(24.0, full.height()));
         let p = ui.painter();
-        p.rect_filled(label, 0.0, Color32::from_rgb(225, 225, 225));
+        p.rect_filled(label, 0.0, NAVY);
         let galley = p.layout_no_wrap(
             if self.view == View::Gantt { "GRÁFICO DE GANTT" } else { "PLANILHA DE TAREFAS" }.to_string(),
             FontId::proportional(11.0),
-            Color32::from_gray(90),
+            MINT,
         );
         let pos = Pos2::new(label.center().x - galley.size().y / 2.0, label.top() + 60.0 + galley.size().x);
-        p.add(egui::epaint::TextShape::new(pos, galley, Color32::from_gray(90)).with_angle(-std::f32::consts::FRAC_PI_2));
+        p.add(egui::epaint::TextShape::new(pos, galley, MINT).with_angle(-std::f32::consts::FRAC_PI_2));
         let area = Rect::from_min_max(Pos2::new(label.right(), full.top()), full.max);
 
         let n = self.n();
@@ -1110,7 +1161,7 @@ impl App {
             if resp.hovered() || resp.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
-            ui.painter().rect_filled(handle, 0.0, Color32::from_rgb(200, 200, 200));
+            ui.painter().rect_filled(handle, 0.0, Color32::from_rgb(0xC9, 0xD6, 0xDD));
             (grid, Some(Rect::from_min_max(Pos2::new(handle.right(), area.top()), area.max)))
         } else {
             (area, None)
