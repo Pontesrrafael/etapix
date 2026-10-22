@@ -1,5 +1,7 @@
 # pjsched
 
+**Instalador do Etapix:** baixe `Etapix-0.1.0.zip` em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), descompacte e execute `etapix-setup-0.1.0.exe`.
+
 A clean-room scheduling engine (critical path and resource leveling) written in Rust. Its behavior
 comes from black-box experiments against Microsoft Project 16.0.20430. No vendor code was
 decompiled or consulted.
