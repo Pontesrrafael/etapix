@@ -81,7 +81,7 @@ tools (`criar_projeto`, `ler_projeto`, `adicionar_tarefas`, `editar_tarefa`, `ex
 operations as the app and save it back, so an assistant can build and change schedules that open
 in Etapix and Project. `integrations/skill/etapix/SKILL.md` tells the assistant how to use them.
 
-`toolsuild-integrations.ps1` packs `dist\etapix.mcpb` (Claude Desktop extension),
+`toolsbuild-integrations.ps1` packs `dist\etapix.mcpb` (Claude Desktop extension),
 `dist\etapix-skill.zip` (for claude.ai) and `dist\Etapix-Claude-Codex-<version>.zip`, whose
 `instalar.cmd` registers the server and the skill in Claude Code and Codex and opens the `.mcpb`
 in Claude Desktop.
