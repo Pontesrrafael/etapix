@@ -68,6 +68,9 @@ The interface uses the Etapix typefaces, built into the executable: Inter (text)
 Sans (headings and wordmark), both under the SIL Open Font License 1.1 (licences in
 `app/assets/fonts`).
 
+To review the layout without touching the screen, run the app with `ETAPIX_SNAPSHOT_DIR` set to
+a folder: it opens each ribbon tab, saves a PNG of the window for each, and quits.
+
 `etapix-setup` is a per-user installer with the app built in: it installs to
 `%LOCALAPPDATA%\Programs\etapix` without admin rights, adds a Start Menu shortcut and an entry in
 Windows' installed apps; uninstalling removes all three. `/silent` skips every dialog (for IT

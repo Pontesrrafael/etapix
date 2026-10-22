@@ -12,6 +12,7 @@ mod icons;
 /// The Etapix mark and palette.
 mod logo;
 mod mpp;
+mod snapshot;
 
 use std::collections::BTreeSet;
 
@@ -222,6 +223,8 @@ struct App {
     project_info: Option<String>,
     overview: bool,
     scroll_to_start: bool,
+    /// Snapshot mode (see `snapshot.rs`): the tab being captured and frames since it opened.
+    snap: Option<(usize, u32, bool)>,
     /// The chart's last laid-out width, used by "Projeto Inteiro".
     chart_w: f32,
     logo: Option<egui::TextureHandle>,
@@ -258,6 +261,7 @@ impl App {
             project_info: None,
             overview: false,
             scroll_to_start: true,
+            snap: snapshot::dir().map(|_| (0, 0, false)),
             chart_w: 700.0,
             logo: None,
             installed_fonts: None,
@@ -472,11 +476,11 @@ impl App {
 /// Texture coordinates of a whole image.
 const UV: Rect = Rect { min: Pos2::ZERO, max: Pos2 { x: 1.0, y: 1.0 } };
 
-/// "Etapix" with the i in emerald, as in the logo; `pos` is the left end, vertically centred.
+/// "Etapix" with the i in mint (the logo's emerald, lightened for the dark bars it sits on); `pos` is the left end, vertically centred.
 fn wordmark(p: &egui::Painter, pos: Pos2, size: f32, color: Color32) {
     let font = font(HEADING, size);
     let mut job = egui::text::LayoutJob::default();
-    for (part, c) in [("Etap", color), ("i", EMERALD), ("x", color)] {
+    for (part, c) in [("Etap", color), ("i", MINT), ("x", color)] {
         job.append(part, 0.0, egui::TextFormat::simple(font.clone(), c));
     }
     let galley = p.layout_job(job);
@@ -495,18 +499,37 @@ impl App {
     }
 }
 
+/// Lays out `text` one galley per line, never wrapping: line breaks come only from `\n`, so a
+/// wider font makes the label wider instead of breaking words. Returns the lines and the size.
+fn lines(p: &egui::Painter, text: &str, font: FontId, color: Color32) -> (Vec<std::sync::Arc<egui::Galley>>, Vec2) {
+    let lines: Vec<_> = text.split('\n').map(|l| p.layout_no_wrap(l.to_string(), font.clone(), color)).collect();
+    let w = lines.iter().map(|g| g.size().x).fold(0.0, f32::max);
+    let h = lines.iter().map(|g| g.size().y).sum();
+    (lines, Vec2::new(w, h))
+}
+
+/// Draws lines from `lines`, each centred on `center_x`, starting at `top`.
+fn draw_centered(p: &egui::Painter, lines: Vec<std::sync::Arc<egui::Galley>>, center_x: f32, top: f32, color: Color32) {
+    let mut y = top;
+    for g in lines {
+        let h = g.size().y;
+        p.galley_with_override_text_color(Pos2::new(center_x - g.size().x / 2.0, y), g, color);
+        y += h;
+    }
+}
+
 fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool {
-    let font = FontId::proportional(12.0);
-    let galley = ui.painter().layout(label.to_string(), font, TEXT, 80.0);
-    let w = galley.size().x.max(36.0) + 12.0;
+    let color = if enabled { TEXT } else { Color32::from_gray(160) };
+    let (label, size) = lines(ui.painter(), label, FontId::proportional(12.0), color);
+    let w = size.x.max(36.0) + 12.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 72.0), if enabled { Sense::click() } else { Sense::hover() });
     let p = ui.painter();
     if enabled && resp.hovered() {
         p.rect_filled(rect, 0.0, HOVER);
     }
-    icons::draw(p, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 21.0), Vec2::splat(30.0)), icon);
-    let color = if enabled { TEXT } else { Color32::from_gray(160) };
-    p.galley_with_override_text_color(Pos2::new(rect.center().x - galley.size().x / 2.0, rect.top() + 40.0), galley, color);
+    icons::draw(p, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 20.0), Vec2::splat(28.0)), icon);
+    // Text sits between the icon and the group title, however many lines it has (at most two).
+    draw_centered(p, label, rect.center().x, (rect.top() + 38.0).min(rect.bottom() - size.y), color);
     enabled && resp.clicked()
 }
 
@@ -556,7 +579,10 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(8.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 26.0), Sense::hover());
-            ui.painter().image(logo, Rect::from_center_size(rect.center(), Vec2::splat(18.0)), UV, Color32::WHITE);
+            // The mark is dark teal like the bar: a light outline keeps its shape visible.
+            let mark = Rect::from_center_size(rect.center(), Vec2::splat(18.0));
+            ui.painter().rect_stroke(mark.expand(0.5), 4.0, Stroke::new(1.0_f32, Color32::from_white_alpha(140)));
+            ui.painter().image(logo, mark, UV, Color32::WHITE);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(54.0, 26.0), Sense::hover());
             wordmark(ui.painter(), Pos2::new(rect.left() + 2.0, rect.center().y), 15.0, Color32::WHITE);
             ui.add_space(6.0);
@@ -737,7 +763,7 @@ impl App {
                             ui.horizontal(|ui| {
                                 ui.label("Tamanho");
                                 let mut size = self.text_size;
-                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=14.0).speed(0.2).suffix(" pt")).changed() {
+                                if ui.add(egui::DragValue::new(&mut size).range(8.0..=14.0).speed(0.2).fixed_decimals(0).suffix(" pt")).changed() {
                                     self.text_size = size.round();
                                     fonts::save_choice(&self.font_name, self.text_size);
                                 }
@@ -1039,9 +1065,11 @@ impl App {
             let r = Rect::from_min_size(Pos2::new(x, head.top()), Vec2::new(w, HEAD));
             p.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0_f32, GRID_LINE));
             let color = if col == Col::Add { Color32::from_gray(110) } else { TEXT };
-            let galley = p.layout(title.to_string(), FontId::proportional(self.text_size), color, w - 6.0);
-            let pos = if col == Col::Name { Pos2::new(r.left() + 6.0, r.center().y - galley.size().y / 2.0) } else { r.center() - galley.size() / 2.0 };
-            p.galley(pos, galley, color);
+            // Header text keeps its own size (it has two lines at most in 40 px) and stays in its cell.
+            let (title_lines, size) = lines(&p, title, FontId::proportional(self.text_size.min(12.0)), color);
+            let clip = p.with_clip_rect(r.shrink(1.0).intersect(head));
+            let center_x = if col == Col::Name { r.left() + 6.0 + size.x / 2.0 } else { r.center().x };
+            draw_centered(&clip, title_lines, center_x, r.center().y - size.y / 2.0, color);
             if col == Col::Ind {
                 icons::draw(&p, Rect::from_center_size(r.center(), Vec2::splat(14.0)), Icon::Info);
             }
@@ -1413,8 +1441,48 @@ impl App {
     }
 }
 
+impl App {
+    /// Snapshot mode: show each tab, let it settle, save the window as a PNG, then quit.
+    fn snapshot_step(&mut self, ctx: &egui::Context) {
+        const STEPS: [(Tab, &str); 6] = [
+            (Tab::Task, "tarefa"),
+            (Tab::Resource, "recurso"),
+            (Tab::Report, "relatorio"),
+            (Tab::Project, "projeto"),
+            (Tab::View, "exibir"),
+            (Tab::File, "arquivo"),
+        ];
+        let (Some((step, frames, asked)), Some(dir)) = (self.snap, snapshot::dir()) else { return };
+        ctx.request_repaint();
+        let Some(&(tab, name)) = STEPS.get(step) else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        };
+        self.tab = tab;
+        let image = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(image) = image {
+            let _ = std::fs::create_dir_all(&dir);
+            let [w, h] = image.size;
+            let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+            let _ = std::fs::write(dir.join(format!("{}-{name}.png", step + 1)), snapshot::png(w, h, &rgba));
+            self.snap = Some((step + 1, 0, false));
+        } else if frames > 15 && !asked {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            self.snap = Some((step, frames + 1, true));
+        } else {
+            self.snap = Some((step, frames + 1, asked));
+        }
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.snapshot_step(ctx);
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
         let mut acts = Vec::new();
         let was_editing = self.editing.is_some();
