@@ -1,5 +1,5 @@
 [package]
-name = "pjapp"
+name = "etapix"
 version = "0.1.0"
 edition = "2021"
 description = "Desktop project planner for internal use, built on pjsched; reads and writes Microsoft Project XML"

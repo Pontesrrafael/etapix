@@ -1,4 +1,4 @@
-//! pjapp: a desktop project planner for internal use, laid out like Microsoft Project (ribbon,
+//! Etapix: a desktop project planner for internal use, laid out like Microsoft Project (ribbon,
 //! timeline, task grid next to the Gantt chart, status bar). It opens and saves `.mpp` (through
 //! the installed Project) and Project XML.
 
@@ -18,12 +18,12 @@ use icons::Icon;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 800.0]).with_title("pjapp"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 800.0]).with_title("Etapix"),
         ..Default::default()
     };
     let path = std::env::args().nth(1);
     eframe::run_native(
-        "pjapp",
+        "etapix",
         options,
         Box::new(move |cc| {
             setup_style(&cc.egui_ctx);
@@ -205,7 +205,7 @@ impl App {
     }
 
     fn title(&self) -> String {
-        format!("{}{} - pjapp", self.file_name(), if self.doc.dirty { " *" } else { "" })
+        format!("{}{} - Etapix", self.file_name(), if self.doc.dirty { " *" } else { "" })
     }
 
     fn set_doc(&mut self, doc: Doc) {

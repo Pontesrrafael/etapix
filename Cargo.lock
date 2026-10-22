@@ -1101,6 +1101,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
 [[package]]
+name = "etapix"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui_extras",
+ "pjsched",
+ "rfd",
+]
+
+[[package]]
+name = "etapix-setup"
+version = "0.1.0"
+dependencies = [
+ "rfd",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2487,24 +2505,6 @@ dependencies = [
  "atomic-waker",
  "fastrand",
  "futures-io",
-]
-
-[[package]]
-name = "pjapp"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "eframe",
- "egui_extras",
- "pjsched",
- "rfd",
-]
-
-[[package]]
-name = "pjapp-setup"
-version = "0.1.0"
-dependencies = [
- "rfd",
 ]
 
 [[package]]

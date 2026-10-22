@@ -1,8 +1,8 @@
 //! `.mpp` files through the Microsoft Project installed on the machine.
 //!
-//! The `.mpp` format is binary and undocumented, so pjapp does not parse it: it asks Project
+//! The `.mpp` format is binary and undocumented, so Etapix does not parse it: it asks Project
 //! (through its documented COM object model, invisibly) to convert between `.mpp` and Project
-//! XML, which pjapp reads and writes itself.
+//! XML, which Etapix reads and writes itself.
 //!
 //! - If Project is already open, the conversion runs in that instance (COM attaches to it) and
 //!   only closes the file it opened; otherwise it starts a hidden instance and quits it.
@@ -38,7 +38,7 @@ try {
   if (-not $running) { [void]$app.Quit(0) }
   [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app)
 }
-# Drop pjapp's temporary files from Project's recent lists.
+# Drop etapix's temporary files from Project's recent lists.
 $root = 'HKCU:\Software\Microsoft\Office\16.0\MS Project\User MRU'
 if (Test-Path $root) {
   foreach ($list in Get-ChildItem $root -Recurse | Where-Object { $_.PSChildName -in 'File MRU', 'Place MRU' }) {
@@ -60,7 +60,7 @@ if (Test-Path $root) {
 "#;
 
 fn temp_dir() -> PathBuf {
-    std::env::temp_dir().join("pjapp-mpp")
+    std::env::temp_dir().join("etapix-mpp")
 }
 
 fn convert(src: &Path, dst: &Path, mode: &str) -> Result<(), String> {

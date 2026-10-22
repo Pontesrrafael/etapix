@@ -435,7 +435,7 @@ mod tests {
         assert!(d.set_predecessors(a, "2").is_err());
         assert!(d.project.tasks[a].preds.is_empty());
 
-        let dir = std::env::temp_dir().join("pjapp-test");
+        let dir = std::env::temp_dir().join("etapix-test");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("cadeia.xml");
         d.save(&path).unwrap();
@@ -484,17 +484,17 @@ mod tests {
 mod mpp_tests {
     use super::*;
 
-    /// Needs Microsoft Project installed: `cargo test -p pjapp -- --ignored mpp`.
+    /// Needs Microsoft Project installed: `cargo test -p etapix -- --ignored mpp`.
     #[test]
     #[ignore]
     fn mpp_round_trip_through_installed_project() {
-        let dir = std::env::temp_dir().join("pjapp-test");
+        let dir = std::env::temp_dir().join("etapix-test");
         std::fs::create_dir_all(&dir).unwrap();
         let mut d = Doc::blank();
         d.add_task("Fundação", 3.0).unwrap();
         let b = d.add_task("Estrutura", 2.0).unwrap();
         d.set_predecessors(b, "1").unwrap();
-        let path = dir.join("teste-pjapp.mpp");
+        let path = dir.join("teste-etapix.mpp");
         let _ = std::fs::remove_file(&path);
         d.save(&path).unwrap();
         assert!(std::fs::read(&path).unwrap().starts_with(&[0xD0, 0xCF, 0x11, 0xE0]), "not an OLE compound file");

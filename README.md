@@ -38,12 +38,12 @@ that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
 ## Desktop app (`app/`) and installer (`setup/`)
 
-`pjapp` is a desktop planner for internal use, built with egui on top of the engine and laid out
+Etapix is a desktop planner for internal use, built with egui on top of the engine and laid out
 like Project: ribbon (Arquivo, Tarefa, Recurso, Relatório, Projeto, Exibir), timeline, task grid
 next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associations alone.
 
 - `.mpp` files open and save through the Microsoft Project installed on the machine (`mpp.rs`):
-  Project converts between `.mpp` and Project XML invisibly over COM, and pjapp reads and writes
+  Project converts between `.mpp` and Project XML invisibly over COM, and Etapix reads and writes
   the XML. A save goes to a temporary file first and replaces the target only when the
   conversion worked. Project XML (`.xml`) needs no Project.
 - Grid: mode, name (indented by outline level), duration ("3 dias"), start and finish
@@ -62,10 +62,10 @@ next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associatio
   Projeto: project start date and baseline. Relatório: project overview. Exibir: Gantt or task
   sheet, zoom, whole project, timeline on or off.
 
-`pjapp-setup` is a per-user installer with the app built in: it installs to
-`%LOCALAPPDATA%\Programs\pjapp` without admin rights, adds a Start Menu shortcut and an entry in
+`etapix-setup` is a per-user installer with the app built in: it installs to
+`%LOCALAPPDATA%\Programs\etapix` without admin rights, adds a Start Menu shortcut and an entry in
 Windows' installed apps; uninstalling removes all three. `/silent` skips every dialog (for IT
-deployment): `pjapp-setup-0.1.0.exe /silent`, and `desinstalar.exe /uninstall /silent`.
+deployment): `etapix-setup-0.1.0.exe /silent`, and `desinstalar.exe /uninstall /silent`.
 
 Build both with:
 
@@ -73,7 +73,7 @@ Build both with:
 powershell -ExecutionPolicy Bypass -File tools\build-installer.ps1
 ```
 
-The script writes `dist\pjapp-setup-<version>.exe`. The UI crates need an assembler for
+The script writes `dist\etapix-setup-<version>.exe`. The UI crates need an assembler for
 `dlltool`: the script puts the portable WinLibs binutils in `%USERPROFILE%\tools\mingw64` on
 `PATH` (the GNU toolchain ships `dlltool` but not `as`).
 
