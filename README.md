@@ -7,7 +7,7 @@
 | **Windows** 10 ou 11 | [⬇ Etapix-Instalador.exe](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe) | Baixe e dê dois cliques. |
 | **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
 
-Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` precisam do Microsoft Project e por isso só abrem no Windows; no Linux, use Project XML (`.xml`).
+Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` abrem em qualquer máquina, sem o Microsoft Project; para salvar em `.mpp`, o Project ainda precisa estar instalado (Windows). Sem ele, salve em Project XML (`.xml`).
 
 Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
@@ -55,10 +55,12 @@ Etapix is a desktop planner for internal use, built with egui on top of the engi
 like Project: ribbon (Arquivo, Tarefa, Recurso, Relatório, Projeto, Exibir), timeline, task grid
 next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associations alone.
 
-- `.mpp` files open and save through the Microsoft Project installed on the machine (`mpp.rs`):
-  Project converts between `.mpp` and Project XML invisibly over COM, and Etapix reads and writes
-  the XML. A save goes to a temporary file first and replaces the target only when the
-  conversion worked. Project XML (`.xml`) needs no Project.
+- `.mpp` files open natively, on Windows or Linux, with no Project installed (`src/cfb.rs` reads
+  the compound-file container, `src/mpp.rs` decodes Project's tables into Project XML). The reader
+  is checked against the XML Project itself saves of 200+ files (`tests/mpp_native.rs`).
+- Saving `.mpp` still goes through the installed Microsoft Project (`app/src/mpp.rs`), which
+  converts Etapix's Project XML invisibly over COM. A save goes to a temporary file first and
+  replaces the target only when the conversion worked. Project XML (`.xml`) needs no Project.
 - Grid: mode, name (indented by outline level), duration ("3 dias"), start and finish
   ("Qui 22/10/26"), predecessors and resource names. Type into an empty row to add a task. Type
   over a cell or press F2 to edit; Enter, Tab and Escape behave as in Project. Every edit

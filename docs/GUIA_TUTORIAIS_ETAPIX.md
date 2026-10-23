@@ -19,7 +19,7 @@ A seção 10 diz o que foi verificado e a seção **Pendências**, o que falta.
 | Público principal | Equipe interna que já usa ou usaria o Microsoft Project: planejadores, coordenadores e gestores de projeto. Parte do público vem do Project e espera os mesmos nomes; parte nunca usou uma ferramenta de cronograma. |
 | Módulos prioritários | 1. Grade de tarefas e Gráfico de Gantt. 2. Aba Tarefa. 3. Arquivo (abrir e salvar `.mpp`/`.xml`). 4. Aba Recurso. 5. Aba Projeto. 6. Aba Exibir e Formato. 7. Aba Relatório. 8. Linha do Tempo. 9. Conector para Claude e Codex. |
 | Tecnologia e componentes existentes | Rust, interface em egui/eframe 0.29 (modo imediato, sem HTML nem DOM). Faixa de opções em `app/src/ribbon.rs`, janelas em `app/src/dialogs.rs`, grade e Gantt em `app/src/main.rs` e `app/src/gantt.rs`, ícones desenhados em `app/src/icons.rs`. Motor de agendamento `pjsched`. Testes de interface sem janela em `app/src/monkey_tests.rs`. |
-| Perfis e permissões | Não há perfis nem login: é um aplicativo de mesa por pessoa, e quem abre um arquivo pode alterá-lo. As únicas restrições são de contexto: comandos que exigem uma tarefa selecionada, `.mpp` só no Windows com o Microsoft Project instalado e Claude Desktop só no Windows. |
+| Perfis e permissões | Não há perfis nem login: é um aplicativo de mesa por pessoa, e quem abre um arquivo pode alterá-lo. As únicas restrições são de contexto: comandos que exigem uma tarefa selecionada, salvar `.mpp` só no Windows com o Microsoft Project instalado (abrir funciona em qualquer máquina) e Claude Desktop só no Windows. |
 | Identidade visual | Paleta Etapix: verde-petróleo `#0B6B66` (marca, abas, seleção), azul-marinho `#1E2F3E` (texto), esmeralda `#14C38E` (barras, destaques), menta `#4EE7C7` e cinzas claros. Fontes Inter (texto) e Plus Jakarta Sans (títulos), embutidas. Faixa de opções e termos iguais aos do Microsoft Project em português. |
 | Progresso entre dispositivos | Local, por usuário do sistema operacional: no mesmo arquivo de configurações que o Etapix já usa (`%APPDATA%\Etapix\settings.txt` no Windows, `~/.config/etapix/settings.txt` no Linux). Não há sincronização. |
 | Responsável pela revisão do conteúdo | `[A DEFINIR]`: responsável pelo Etapix na equipe (sugestão: rafael.pontes). |
@@ -225,18 +225,20 @@ Entregável, Anotações, Detalhes e Preencher.
 
 **O que você pode fazer aqui:**
 - **Novo**, **Abrir**, **Salvar** e **Salvar como**.
-- Abrir e salvar `.mpp` (Windows, com o Microsoft Project instalado) e Project XML (`.xml`).
+- Abrir `.mpp` em qualquer máquina, sem o Project; salvar `.mpp` no Windows com o Microsoft Project
+  instalado; abrir e salvar Project XML (`.xml`).
 
 **Procedimento: Abrir um `.mpp`**
 1. Clique em **Arquivo > Abrir**.
 2. Escolha o arquivo `.mpp` e confirme.
-3. Aguarde: o Microsoft Project instalado converte o arquivo sem abrir janela.
+3. O Etapix lê o `.mpp` sozinho, sem o Microsoft Project.
 
 **Como conferir:** o nome do arquivo aparece no título da janela e as tarefas na grade.
 
-**Se não funcionar:** "conversão pelo Microsoft Project falhou" indica que o Project não está
-instalado ou que o arquivo está aberto e bloqueado nele. Feche-o no Project e tente de novo, ou
-use `.xml`. No Linux, `.mpp` não é suportado: use `.xml`.
+**Se não funcionar:** "não foi possível ler o .mpp" indica um arquivo anterior ao Project 2010 ou
+corrompido: abra-o no Project e salve de novo, ou peça o arquivo em `.xml`. Ao salvar, "conversão
+pelo Microsoft Project falhou" indica que o Project não está instalado ou que o arquivo está aberto
+nele: feche-o no Project e tente de novo, ou salve em `.xml`.
 
 **Procedimento: Salvar**
 1. Clique em **Salvar** (ou Ctrl+S, ou o disquete ao lado do logo).
@@ -250,7 +252,7 @@ use `.xml`. No Linux, `.mpp` não é suportado: use `.xml`.
 - O `.mpp` é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original
   não é alterado.
 
-**Limitações e permissões:** `.mpp` exige Windows com o Microsoft Project instalado. Imprimir,
+**Limitações e permissões:** salvar `.mpp` exige Windows com o Microsoft Project instalado. Imprimir,
 Exportar, Compartilhar e Opções ainda não existem.
 
 **Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.

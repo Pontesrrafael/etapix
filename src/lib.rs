@@ -9,11 +9,13 @@
 //! [`leveling::level`] -> [`cpm::TaskSchedule`] per task.
 
 pub mod calendar;
+pub mod cfb;
 pub mod cost;
 pub mod cpm;
 pub mod edit;
 pub mod leveling;
 pub mod model;
+pub mod mpp;
 pub mod mspdi;
 pub mod mspdi_write;
 pub mod tracking;

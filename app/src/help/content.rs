@@ -177,14 +177,14 @@ pub const TUTORIALS: &[Tutorial] = &[
         icon: Icon::Sheet,
         tab: Some(Tab::File),
         title: "Arquivo",
-        summary: "Crie, abra e salve projetos em .mpp (com o Microsoft Project instalado) e Project XML.",
-        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir e salvar .mpp no Windows com o Microsoft Project instalado", "Abrir e salvar Project XML (.xml) em qualquer sistema"],
+        summary: "Crie, abra e salve projetos em .mpp e Project XML. Abrir .mpp não precisa do Microsoft Project; salvar em .mpp, sim.",
+        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir .mpp em qualquer máquina, sem o Microsoft Project", "Salvar .mpp no Windows com o Microsoft Project instalado", "Abrir e salvar Project XML (.xml) em qualquer sistema"],
         procedures: &[
             Procedure {
                 title: "Abrir um .mpp",
-                steps: &["Clique em Arquivo > Abrir.", "Escolha o arquivo .mpp e confirme.", "Aguarde: o Microsoft Project instalado converte o arquivo sem abrir janela."],
+                steps: &["Clique em Arquivo > Abrir.", "Escolha o arquivo .mpp e confirme.", "O Etapix lê o .mpp sozinho: não precisa do Microsoft Project."],
                 check: "O nome do arquivo aparece no título da janela e as tarefas, na grade.",
-                fails: "\"conversão pelo Microsoft Project falhou\": o Project não está instalado ou o arquivo está aberto nele. Feche-o no Project e tente de novo, ou use .xml. No Linux, .mpp não é suportado: use .xml.",
+                fails: "\"não foi possível ler o .mpp\": o arquivo é de uma versão anterior ao Project 2010 ou está corrompido. Abra-o no Project e salve de novo, ou peça o arquivo em .xml.",
             },
             Procedure {
                 title: "Salvar",
@@ -197,7 +197,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             "Ao fechar o Etapix, ou usar Novo e Abrir com alterações não salvas, ele pergunta se deseja salvar.",
             "O .mpp é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original não muda.",
         ],
-        limits: ".mpp exige Windows com o Microsoft Project instalado. Imprimir, Exportar, Compartilhar e Opções ainda não existem.",
+        limits: "Salvar em .mpp exige Windows com o Microsoft Project instalado (abrir, não). Imprimir, Exportar, Compartilhar e Opções ainda não existem.",
         tour: &[],
     },
     Tutorial {

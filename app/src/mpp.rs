@@ -1,16 +1,16 @@
-//! `.mpp` files through the Microsoft Project installed on the machine (Windows only: on Linux
-//! there is no Project, and `.mpp` files are refused with a message pointing to Project XML).
+//! `.mpp` files.
 //!
-//! The `.mpp` format is binary and undocumented, so Etapix does not parse it: it asks Project
-//! (through its documented COM object model, invisibly) to convert between `.mpp` and Project
-//! XML, which Etapix reads and writes itself.
-//!
+//! - Reading is native ([`pjsched::mpp::mpp_to_mspdi`]): no Microsoft Project needed, on Windows
+//!   or Linux. Only if the native reader cannot make sense of a file does Etapix fall back to the
+//!   installed Project (Windows).
+//! - Writing still goes through the installed Project: it opens Etapix's Project XML through its
+//!   documented COM object model, invisibly, and saves it as `.mpp`. Saving goes to a temporary
+//!   `.mpp` first and replaces the target only on success, so a failed conversion never damages
+//!   the existing file.
 //! - If Project is already open, the conversion runs in that instance (COM attaches to it) and
 //!   only closes the file it opened; otherwise it starts a hidden instance and quits it.
-//! - Saving goes to a temporary `.mpp` first and replaces the target only on success, so a
-//!   failed conversion never damages the existing file.
 //! - Project adds every file it opens to its recent list; the temporary XML files are removed
-//!   from that list afterwards (the `.mpp` itself stays, as when you open it in Project).
+//!   from that list afterwards.
 
 #![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 
@@ -147,8 +147,17 @@ fn temp_file(ext: &str) -> PathBuf {
     temp_dir().join(format!("{}-{stamp}.{ext}", std::process::id()))
 }
 
-/// Reads a `.mpp` file as Project XML text.
+/// Reads a `.mpp` file as Project XML text: natively, or through Project when the native reader
+/// cannot (and Project is there to ask).
 pub fn read_mpp(path: &Path) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    match pjsched::mpp::mpp_to_mspdi(&bytes) {
+        Ok(xml) => Ok(xml),
+        Err(native) => read_through_project(path).map_err(|_| format!("não foi possível ler o .mpp: {native}")),
+    }
+}
+
+fn read_through_project(path: &Path) -> Result<String, String> {
     let xml = temp_file("xml");
     convert(path, &xml, "to-xml")?;
     let text = std::fs::read_to_string(&xml).map_err(|e| e.to_string());
@@ -175,8 +184,8 @@ pub fn is_mpp(path: &Path) -> bool {
 
 #[cfg(all(test, windows))]
 mod tests {
-    /// On a machine without Project the message says so in plain Portuguese, with no garbled
-    /// accents, and points to Project XML.
+    /// On a machine without Project, .mpp files still open (natively); the conversion through
+    /// Project, used for saving, says plainly that Project is missing.
     #[test]
     fn missing_project_gives_a_clear_message() {
         std::env::set_var("ETAPIX_PROJECT_PROGID", "Etapix.ProjetoInexistente");
@@ -184,8 +193,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let fake = dir.join("teste.mpp");
         std::fs::write(&fake, b"x").unwrap();
-        let err = super::read_mpp(&fake).unwrap_err();
+        let err = super::read_through_project(&fake).unwrap_err();
+        // A real .mpp still opens: the native reader does not need Project.
+        let real = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/mpp-corpus/b1/S1-caminho-critico.mpp");
+        let xml = super::read_mpp(&real);
         std::env::remove_var("ETAPIX_PROJECT_PROGID");
+        assert!(xml.is_ok_and(|x| x.contains("<Name>A</Name>")));
         assert!(err.contains("Microsoft Project não foi encontrado"), "{err}");
         assert!(err.contains("Formato XML"), "{err}");
         assert!(!err.contains('\u{FFFD}'), "garbled text: {err}");

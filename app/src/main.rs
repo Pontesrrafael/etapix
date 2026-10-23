@@ -1171,7 +1171,7 @@ impl App {
                 acts.push(Act::HelpCenter);
             }
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Os arquivos .mpp são lidos e gravados pelo Microsoft Project instalado nesta máquina.").color(Color32::from_gray(110)));
+            ui.label(egui::RichText::new("Os arquivos .mpp são lidos pelo próprio Etapix e gravados pelo Microsoft Project instalado nesta máquina.").color(Color32::from_gray(110)));
         });
         acts
     }
