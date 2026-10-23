@@ -21,10 +21,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
+use std::ops::Range;
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 
 use crate::cfb;
+
+mod update;
+pub use update::update_mpp;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MppError(pub String);
@@ -107,7 +111,8 @@ struct Table {
     var: HashMap<(u32, u16), Vec<u8>>,
 }
 
-fn records(meta: &[u8], data: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+/// Where each record lives: its item in `meta` and its bytes in `data`.
+fn spans(meta: &[u8], data: &[u8]) -> Vec<(Range<usize>, Range<usize>)> {
     let n = u32_at(meta, 8) as usize;
     if n == 0 || meta.len() < 16 {
         return Vec::new();
@@ -127,12 +132,15 @@ fn records(meta: &[u8], data: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let offsets: Vec<usize> = (0..n).map(|k| u32_at(meta, 16 + stride * k + 4) as usize).collect();
     (0..n)
         .map(|k| {
-            let item = meta.get(16 + stride * k..16 + stride * (k + 1)).unwrap_or_default().to_vec();
             let start = offsets[k].min(total);
             let end = offsets.get(k + 1).copied().unwrap_or(total).clamp(start, total);
-            (item, data[start..end].to_vec())
+            (16 + stride * k..16 + stride * (k + 1), start..end)
         })
         .collect()
+}
+
+fn records(meta: &[u8], data: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+    spans(meta, data).into_iter().map(|(item, rec)| (meta[item].to_vec(), data[rec].to_vec())).collect()
 }
 
 fn table(streams: &BTreeMap<String, Vec<u8>>, name: &str) -> Table {

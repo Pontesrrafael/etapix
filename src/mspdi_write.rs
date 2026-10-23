@@ -82,7 +82,7 @@ fn base_calendar(out: &mut String, uid: usize, cal: &Calendar) {
     out.push_str("</Calendar>");
 }
 
-fn link_code(kind: LinkType) -> u8 {
+pub(crate) fn link_code(kind: LinkType) -> u8 {
     match kind {
         LinkType::FinishToFinish => 0,
         LinkType::FinishToStart => 1,
@@ -91,7 +91,7 @@ fn link_code(kind: LinkType) -> u8 {
     }
 }
 
-fn constraint(c: &Constraint) -> (u8, Option<NaiveDateTime>) {
+pub(crate) fn constraint(c: &Constraint) -> (u8, Option<NaiveDateTime>) {
     match *c {
         Constraint::AsSoonAsPossible => (0, None),
         Constraint::AsLateAsPossible => (1, None),

@@ -177,8 +177,8 @@ pub const TUTORIALS: &[Tutorial] = &[
         icon: Icon::Sheet,
         tab: Some(Tab::File),
         title: "Arquivo",
-        summary: "Crie, abra e salve projetos em .mpp e Project XML. Abrir .mpp não precisa do Microsoft Project; salvar em .mpp, sim.",
-        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir .mpp em qualquer máquina, sem o Microsoft Project", "Salvar .mpp no Windows com o Microsoft Project instalado", "Abrir e salvar Project XML (.xml) em qualquer sistema"],
+        summary: "Crie, abra e salve projetos em .mpp e Project XML. Abrir .mpp e salvar alterações nas tarefas não precisam do Microsoft Project.",
+        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir .mpp em qualquer máquina, sem o Microsoft Project", "Salvar no próprio .mpp, sem o Project, as alterações nas tarefas que já existem", "Incluir ou excluir tarefas, vínculos e recursos e salvar em .mpp, com o Microsoft Project instalado", "Abrir e salvar Project XML (.xml) em qualquer sistema"],
         procedures: &[
             Procedure {
                 title: "Abrir um .mpp",
@@ -190,14 +190,14 @@ pub const TUTORIALS: &[Tutorial] = &[
                 title: "Salvar",
                 steps: &["Clique em Salvar (Ctrl+S ou o disquete ao lado do logo).", "Na primeira vez, escolha o nome e o formato (.mpp ou .xml)."],
                 check: "O * some do título da janela.",
-                fails: "Se o .mpp não salvar, salve como .xml: o Project abre esse formato sem perder o cronograma.",
+                fails: "Se o .mpp não salvar (incluir ou excluir tarefas, vínculos ou recursos ainda precisa do Microsoft Project), salve como .xml: o Project abre esse formato sem perder o cronograma.",
             },
         ],
         tips: &[
             "Ao fechar o Etapix, ou usar Novo e Abrir com alterações não salvas, ele pergunta se deseja salvar.",
             "O .mpp é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original não muda.",
         ],
-        limits: "Salvar em .mpp exige Windows com o Microsoft Project instalado (abrir, não). Imprimir, Exportar, Compartilhar e Opções ainda não existem.",
+        limits: "Incluir ou excluir tarefas, vínculos, recursos ou calendários e salvar em .mpp exige o Microsoft Project instalado; abrir e salvar alterações nas tarefas, não. Imprimir, Exportar, Compartilhar e Opções ainda não existem.",
         tour: &[],
     },
     Tutorial {

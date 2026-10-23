@@ -3,10 +3,12 @@
 //! - Reading is native ([`pjsched::mpp::mpp_to_mspdi`]): no Microsoft Project needed, on Windows
 //!   or Linux. Only if the native reader cannot make sense of a file does Etapix fall back to the
 //!   installed Project (Windows).
-//! - Writing still goes through the installed Project: it opens Etapix's Project XML through its
-//!   documented COM object model, invisibly, and saves it as `.mpp`. Saving goes to a temporary
-//!   `.mpp` first and replaces the target only on success, so a failed conversion never damages
-//!   the existing file.
+//! - Writing is native too when the project comes from a `.mpp` ([`pjsched::mpp::update_mpp`]):
+//!   Etapix's edits go into that file's own tables. Changes the native writer cannot make yet
+//!   (new tasks, links, resources...) go through the installed Project: it opens Etapix's Project
+//!   XML through its documented COM object model, invisibly, and saves it as `.mpp`.
+//! - Either way the new file is written next to the target first and replaces it only on
+//!   success, so a failed save never damages the existing file.
 //! - If Project is already open, the conversion runs in that instance (COM attaches to it) and
 //!   only closes the file it opened; otherwise it starts a hidden instance and quits it.
 //! - Project adds every file it opens to its recent list; the temporary XML files are removed
@@ -165,8 +167,42 @@ fn read_through_project(path: &Path) -> Result<String, String> {
     text
 }
 
-/// Writes Project XML text as a `.mpp` file, replacing `path` only once the conversion worked.
-pub fn write_mpp(path: &Path, xml: &str) -> Result<(), String> {
+/// Writes Project XML text as a `.mpp` file, replacing `path` only once the save worked: natively
+/// into `path` itself, or into a copy of `source` (the `.mpp` the project was opened from) when
+/// `path` is new; through Project when the native writer cannot.
+pub fn write_mpp(path: &Path, xml: &str, source: Option<&Path>) -> Result<(), String> {
+    let base = if path.exists() { Some(path) } else { source.filter(|s| is_mpp(s) && s.exists()) };
+    let native = match base {
+        Some(base) => write_native(base, path, xml),
+        None => Err("o projeto não veio de um arquivo .mpp".into()),
+    };
+    native.or_else(|why| {
+        write_through_project(path, xml).map_err(|com| {
+            if com.contains("não foi encontrado") || cfg!(not(windows)) {
+                format!(
+                    "não foi possível gravar direto no .mpp ({why}), e o Microsoft Project, que gravaria essa alteração,                      não está disponível nesta máquina. Salve em Project XML (.xml): o Project abre esse formato."
+                )
+            } else {
+                com
+            }
+        })
+    })
+}
+
+/// Saves `xml` into a copy of the `.mpp` at `base`, as `path`.
+fn write_native(base: &Path, path: &Path, xml: &str) -> Result<(), String> {
+    let original = std::fs::read(base).map_err(|e| format!("{}: {e}", base.display()))?;
+    let bytes = pjsched::mpp::update_mpp(&original, xml).map_err(|e| e.0)?;
+    let file_name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let partial = path.with_file_name(format!(".{file_name}.etapix-tmp"));
+    std::fs::write(&partial, bytes).map_err(|e| format!("{}: {e}", partial.display()))?;
+    std::fs::rename(&partial, path).map_err(|e| {
+        let _ = std::fs::remove_file(&partial);
+        format!("{}: {e} (o arquivo está aberto no Project?)", path.display())
+    })
+}
+
+fn write_through_project(path: &Path, xml: &str) -> Result<(), String> {
     let src = temp_file("xml");
     let out = temp_file("mpp");
     std::fs::write(&src, xml).map_err(|e| e.to_string())?;
@@ -184,10 +220,14 @@ pub fn is_mpp(path: &Path) -> bool {
 
 #[cfg(all(test, windows))]
 mod tests {
+    /// The tests that stand in for a missing Project share one environment variable.
+    static NO_PROJECT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// On a machine without Project, .mpp files still open (natively); the conversion through
     /// Project, used for saving, says plainly that Project is missing.
     #[test]
     fn missing_project_gives_a_clear_message() {
+        let _only = NO_PROJECT.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ETAPIX_PROJECT_PROGID", "Etapix.ProjetoInexistente");
         let dir = std::env::temp_dir().join("etapix-mpp-test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -203,5 +243,37 @@ mod tests {
         assert!(err.contains("Formato XML"), "{err}");
         assert!(!err.contains('\u{FFFD}'), "garbled text: {err}");
         eprintln!("{err}");
+    }
+
+    /// Without Project, edits save natively into the `.mpp`; a change the native writer cannot
+    /// make yet is refused with a way out, and leaves the file as it was.
+    #[test]
+    fn saves_without_project() {
+        let _only = NO_PROJECT.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ETAPIX_PROJECT_PROGID", "Etapix.ProjetoInexistente");
+        let dir = std::env::temp_dir().join("etapix-mpp-save-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("copia.mpp");
+        std::fs::copy(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/mpp-corpus/b1/S1-caminho-critico.mpp"), &file).unwrap();
+        let mut doc = crate::doc::Doc::open(&file).unwrap();
+        doc.apply(|p| {
+            p.tasks[0].name = "A editada".into();
+            Ok(())
+        })
+        .unwrap();
+        let edited = doc.save(&file);
+        doc.apply(|p| {
+            p.tasks.push(pjsched::model::Task::new(99, 99, "Nova", 480));
+            Ok(())
+        })
+        .unwrap();
+        let before = std::fs::read(&file).unwrap();
+        let refused = doc.save(&file);
+        std::env::remove_var("ETAPIX_PROJECT_PROGID");
+        edited.unwrap();
+        assert!(super::read_mpp(&file).unwrap().contains("<Name>A editada</Name>"));
+        let err = refused.unwrap_err();
+        assert!(err.contains("tarefas incluídas") && err.contains("Project XML (.xml)"), "{err}");
+        assert_eq!(std::fs::read(&file).unwrap(), before);
     }
 }

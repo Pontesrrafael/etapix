@@ -60,12 +60,13 @@ impl Doc {
         Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false, version: 0, pending: None, undo: Vec::new(), redo: Vec::new() })
     }
 
-    /// Writes `.mpp` (through the installed Project) or Project XML, by the file's extension.
+    /// Writes `.mpp` (natively into the original file, or through the installed Project) or Project
+    /// XML, by the file's extension.
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
         let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let xml = write_project(&self.project, &self.cals, &self.schedule, &name);
         if crate::mpp::is_mpp(path) {
-            crate::mpp::write_mpp(path, &xml)?;
+            crate::mpp::write_mpp(path, &xml, self.path.as_deref())?;
         } else {
             std::fs::write(path, xml).map_err(|e| format!("{}: {e}", path.display()))?;
         }
