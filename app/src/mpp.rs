@@ -20,9 +20,20 @@ use std::process::Command;
 const SCRIPT: &str = r#"
 param([string]$Src, [string]$Dst, [string]$Mode, [string]$Temp)
 $ErrorActionPreference = 'Stop'
+# Errors go back to Etapix as UTF-8 text (the console code page would garble accents).
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+trap { [Console]::Error.WriteLine($_.Exception.Message); exit 2 }
 $M = [System.Reflection.Missing]::Value
 $running = @(Get-Process WINPROJ -ErrorAction SilentlyContinue).Count -gt 0
-$app = New-Object -ComObject MSProject.Application
+try {
+  # ETAPIX_PROJECT_PROGID lets a test stand in for a machine without Project.
+  $progid = if ($env:ETAPIX_PROJECT_PROGID) { $env:ETAPIX_PROJECT_PROGID } else { 'MSProject.Application' }
+  $app = New-Object -ComObject $progid
+} catch {
+  # Project is not installed, or not registered for automation in this (32/64-bit) view.
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 3
+}
 $alerts = $app.DisplayAlerts
 $app.DisplayAlerts = $false
 try {
@@ -80,11 +91,43 @@ fn convert(src: &Path, dst: &Path, mode: &str) -> Result<(), String> {
     let script = dir.join("converter.ps1");
     // UTF-8 with BOM so Windows PowerShell 5.1 reads non-ASCII paths in the script correctly.
     std::fs::write(&script, [&[0xEF, 0xBB, 0xBF][..], SCRIPT.as_bytes()].concat()).map_err(|e| e.to_string())?;
+    // A 32-bit Project may register its automation only for 32-bit programs: when the 64-bit
+    // PowerShell cannot find it, the 32-bit one (SysWOW64) tries again.
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
+    let shells = ["powershell".to_string(), format!(r"{windir}\SysWOW64\WindowsPowerShell\v1.0\powershell.exe")];
+    let mut last = None;
+    for shell in &shells {
+        let out = run_script(shell, &script, src, dst, mode, &dir)?;
+        if out.status.code() == Some(3) {
+            last = Some(out);
+            continue;
+        }
+        if !out.status.success() || !dst.exists() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or("o Project não converteu o arquivo");
+            return Err(format!("conversão pelo Microsoft Project falhou: {first}"));
+        }
+        return Ok(());
+    }
+    // The COM error code is enough to tell what happened (80040154: class not registered).
+    let code = last
+        .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+        .and_then(|e| e.split_whitespace().find(|w| w.len() == 8 && w.chars().all(|c| c.is_ascii_hexdigit())).map(String::from))
+        .unwrap_or_else(|| "desconhecido".into());
+    Err(format!(
+        "o Microsoft Project não foi encontrado nesta máquina, e é ele que lê e grava arquivos .mpp. \
+         Instale o Project para abrir .mpp aqui, ou peça o arquivo em Project XML (no Project: Arquivo > \
+         Salvar como > Formato XML), que o Etapix abre sem o Project. (Código COM: {code})"
+    ))
+}
+
+#[cfg(windows)]
+fn run_script(shell: &str, script: &Path, src: &Path, dst: &Path, mode: &str, dir: &Path) -> Result<std::process::Output, String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let out = Command::new("powershell")
+    Command::new(shell)
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(&script)
+        .arg(script)
         .arg("-Src")
         .arg(src)
         .arg("-Dst")
@@ -92,16 +135,10 @@ fn convert(src: &Path, dst: &Path, mode: &str) -> Result<(), String> {
         .arg("-Mode")
         .arg(mode)
         .arg("-Temp")
-        .arg(&dir)
+        .arg(dir)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("não foi possível iniciar o PowerShell: {e}"))?;
-    if !out.status.success() || !dst.exists() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let first = err.lines().find(|l| !l.trim().is_empty()).unwrap_or("o Project não converteu o arquivo");
-        return Err(format!("conversão pelo Microsoft Project falhou: {first}"));
-    }
-    Ok(())
+        .map_err(|e| format!("não foi possível iniciar o PowerShell: {e}"))
 }
 
 fn temp_file(ext: &str) -> PathBuf {
@@ -134,4 +171,24 @@ pub fn write_mpp(path: &Path, xml: &str) -> Result<(), String> {
 
 pub fn is_mpp(path: &Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case("mpp"))
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    /// On a machine without Project the message says so in plain Portuguese, with no garbled
+    /// accents, and points to Project XML.
+    #[test]
+    fn missing_project_gives_a_clear_message() {
+        std::env::set_var("ETAPIX_PROJECT_PROGID", "Etapix.ProjetoInexistente");
+        let dir = std::env::temp_dir().join("etapix-mpp-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("teste.mpp");
+        std::fs::write(&fake, b"x").unwrap();
+        let err = super::read_mpp(&fake).unwrap_err();
+        std::env::remove_var("ETAPIX_PROJECT_PROGID");
+        assert!(err.contains("Microsoft Project não foi encontrado"), "{err}");
+        assert!(err.contains("Formato XML"), "{err}");
+        assert!(!err.contains('\u{FFFD}'), "garbled text: {err}");
+        eprintln!("{err}");
+    }
 }
