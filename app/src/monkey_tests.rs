@@ -312,3 +312,41 @@ fn help_panel_and_catalog_open_from_every_tab() {
     let _ = ctx.run(input(vec![], t + 0.2), |ctx| app.frame_ui(ctx));
     assert!(app.help.catalog);
 }
+
+/// The scroll bars under the grid and the chart, and at the right, move the view when clicked
+/// or dragged.
+#[test]
+fn scroll_bars_respond_to_clicks_and_drags() {
+    let ctx = egui::Context::default();
+    setup_style(&ctx, None);
+    let mut app = App::new(Some(golden("b10/B10-L2-SS-do-resumo-antes.xml")));
+    app.headless = true;
+    app.suggest = false;
+    app.col_w = [34.0, 24.0, 60.0, 400.0, 72.0, 96.0, 96.0, 96.0, 120.0, 150.0];
+    let mut t = 0.0;
+    let mut frame = |app: &mut App, events: Vec<Event>| {
+        t += 0.1;
+        let _ = ctx.run(input(events, t), |ctx| app.frame_ui(ctx));
+        let _ = ctx.run(input(vec![], t + 0.01), |ctx| app.frame_ui(ctx));
+    };
+    let press = |pos: Pos2, pressed: bool| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Modifiers::default() };
+    frame(&mut app, vec![]);
+    // The bars sit just above the 24 px status bar.
+    let y = SIZE.y - 24.0 - 6.0;
+    let (gantt_before, grid_before) = (app.gantt_x, app.grid_x);
+    // A click on the chart's track, right of the thumb, scrolls a page forward.
+    let spot = Pos2::new(SIZE.x - 60.0, y);
+    frame(&mut app, vec![Event::PointerMoved(spot), press(spot, true), press(spot, false)]);
+    assert!(app.gantt_x > gantt_before, "chart bar ignored the click");
+    // Dragging the grid's thumb to the right scrolls the columns.
+    let from = Pos2::new(24.0 + 20.0, y);
+    let to = from + Vec2::new(200.0, 0.0);
+    frame(&mut app, vec![Event::PointerMoved(from), press(from, true)]);
+    frame(&mut app, vec![Event::PointerMoved(to)]);
+    frame(&mut app, vec![press(to, false)]);
+    assert!(app.grid_x > grid_before, "grid bar ignored the drag");
+    // The vertical bar at the right edge pages down.
+    let spot = Pos2::new(SIZE.x - 6.0, y - 40.0);
+    frame(&mut app, vec![Event::PointerMoved(spot), press(spot, true), press(spot, false)]);
+    assert!(app.scroll_y > 0.0, "vertical bar ignored the click");
+}

@@ -165,6 +165,49 @@ const GRID_LINE: Color32 = Color32::from_rgb(0xDC, 0xE5, 0xEA);
 const HEADER_BG: Color32 = Color32::from_rgb(0xEE, 0xF3, 0xF6);
 const SELECTED: Color32 = Color32::from_rgb(0xDD, 0xF6, 0xEE);
 const TEXT: Color32 = NAVY;
+/// Thickness of the grid's and chart's scroll bars.
+const BAR: f32 = 12.0;
+
+/// A scroll bar in `track`: drag the thumb, or click the track to jump a page, as in Windows.
+/// `total` is the content's length, `visible` the window's, `offset` the scroll position.
+fn scrollbar(ui: &mut egui::Ui, id: &str, track: Rect, horizontal: bool, total: f32, visible: f32, offset: &mut f32) {
+    let p = ui.painter();
+    p.rect_filled(track, 0.0, Color32::from_rgb(0xEE, 0xF3, 0xF6));
+    let max = (total - visible).max(0.0);
+    *offset = offset.clamp(0.0, max);
+    if max <= 0.0 || visible <= 0.0 {
+        return;
+    }
+    let len = if horizontal { track.width() } else { track.height() };
+    let thumb_len = (visible / total * len).clamp(24.0, len);
+    let travel = (len - thumb_len).max(1.0);
+    let at = *offset / max * travel;
+    let thumb = if horizontal {
+        Rect::from_min_size(Pos2::new(track.left() + at, track.top() + 2.0), Vec2::new(thumb_len, track.height() - 4.0))
+    } else {
+        Rect::from_min_size(Pos2::new(track.left() + 2.0, track.top() + at), Vec2::new(track.width() - 4.0, thumb_len))
+    };
+    let resp = ui.interact(track, ui.id().with(id), Sense::click_and_drag());
+    if resp.dragged() {
+        let d = if horizontal { resp.drag_delta().x } else { resp.drag_delta().y };
+        *offset = (*offset + d / travel * max).clamp(0.0, max);
+    } else if resp.clicked() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let before = if horizontal { pos.x < thumb.left() } else { pos.y < thumb.top() };
+            let page = visible * 0.9;
+            *offset = (*offset + if before { -page } else { page }).clamp(0.0, max);
+        }
+    }
+    let color = if resp.dragged() {
+        Color32::from_rgb(0x0B, 0x6B, 0x66)
+    } else if resp.hovered() {
+        Color32::from_gray(140)
+    } else {
+        Color32::from_gray(175)
+    };
+    ui.painter().rect_filled(thumb, 4.0, color);
+}
+
 /// Default row height; the user can change it by dragging a row border.
 const ROW: f32 = 20.0;
 const HEAD: f32 = 40.0;
@@ -1751,18 +1794,26 @@ impl App {
                 self.grid_x -= dx;
             }
         }
+        // Scroll bars: horizontal under the grid and under the chart, vertical at the right edge.
+        let (grid, chart) = (
+            Rect::from_min_max(grid.min, Pos2::new(grid.right(), grid.bottom() - BAR)),
+            chart.map(|c| Rect::from_min_max(c.min, Pos2::new(c.right() - BAR, c.bottom() - BAR))),
+        );
+        let right = chart.unwrap_or(grid);
+        let grid = if chart.is_none() { Rect::from_min_max(grid.min, Pos2::new(grid.right() - BAR, grid.bottom())) } else { grid };
         self.grid(ui, grid);
+        let grid_total: f32 = self.col_w.iter().sum();
+        let track = Rect::from_min_max(Pos2::new(grid.left(), grid.bottom()), Pos2::new(grid.right(), grid.bottom() + BAR));
+        scrollbar(ui, "grid-h", track, true, grid_total, grid.width(), &mut self.grid_x);
         if let Some(c) = chart {
             self.chart_w = c.width();
             self.chart(ui, c);
-            // Horizontal position hint for the chart.
-            let bar = Rect::from_min_max(Pos2::new(c.left(), c.bottom() - 4.0), c.max);
             let total = gantt::Scale::new(&self.doc, self.day, 0.0).width(&self.doc).max(c.width());
-            let thumb_w = (c.width() / total * c.width()).max(20.0);
-            let thumb_x = c.left() + self.gantt_x / total * c.width();
-            ui.painter().rect_filled(bar, 0.0, Color32::from_gray(235));
-            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(thumb_x, bar.top()), Vec2::new(thumb_w, 4.0)), 2.0, Color32::from_gray(160));
+            let track = Rect::from_min_max(Pos2::new(c.left(), c.bottom()), Pos2::new(c.right(), c.bottom() + BAR));
+            scrollbar(ui, "chart-h", track, true, total, c.width(), &mut self.gantt_x);
         }
+        let track = Rect::from_min_max(Pos2::new(right.right(), right.top() + HEAD), Pos2::new(right.right() + BAR, right.bottom()));
+        scrollbar(ui, "rows-v", track, false, content_h, right.height() - HEAD, &mut self.scroll_y);
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
