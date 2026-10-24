@@ -649,6 +649,8 @@ const A_RESOURCE: usize = 8;
 const A_UNITS: usize = 12;
 const A_WORK: usize = 20;
 const A_START: usize = 52;
+/// Regular work (thousandths of a minute): the work beyond it is overtime.
+const A_REGULAR_WORK: usize = 36;
 /// The amount a cost resource charges (cents); Project keeps it again at 84 as remaining cost.
 const A_COST: usize = 68;
 const A_FINISH: usize = 56;
@@ -660,7 +662,7 @@ fn write_assignments(x: &mut String, mpp: &Mpp) {
         let _ = write!(
             x,
             "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID><Units>{}</Units><Work>{}</Work>\
-             <Start>{}</Start><Finish>{}</Finish><Cost>{}</Cost></Assignment>",
+             <Start>{}</Start><Finish>{}</Finish><Cost>{}</Cost><OvertimeWork>{}</OvertimeWork></Assignment>",
             u32_at(r, A_UID),
             u32_at(r, A_TASK),
             i32_at(r, A_RESOURCE),
@@ -668,7 +670,9 @@ fn write_assignments(x: &mut String, mpp: &Mpp) {
             minutes_duration(f64_at(r, A_WORK) / 1000.0),
             iso(start),
             iso(finish),
-            f64_at(r, A_COST)
+            f64_at(r, A_COST),
+            // Overtime is the work beyond the regular work.
+            minutes_duration((f64_at(r, A_WORK) - f64_at(r, A_REGULAR_WORK)).max(0.0) / 1000.0)
         );
     }
     x.push_str("</Assignments>");

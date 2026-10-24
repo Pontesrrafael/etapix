@@ -194,9 +194,10 @@ fn read_calendars(root: Node) -> Result<(Vec<Calendar>, HashMap<i64, usize>)> {
             let b = resolve(base, by_uid, calendars, index, depth + 1)?;
             calendars[b].clone()
         } else {
-            Calendar { name: String::new(), weekdays: Default::default(), exceptions: vec![] }
+            Calendar { name: String::new(), weekdays: Default::default(), exceptions: vec![], source_uid: None }
         };
         cal.name = text(node, "Name").unwrap_or_default().to_string();
+        cal.source_uid = Some(uid);
         for day in child(node, "WeekDays").into_iter().flat_map(|w| children(w, "WeekDay")) {
             // DayType 0 is a dated exception; the same data appears under <Exceptions>.
             let day_type = int(day, "DayType")?;

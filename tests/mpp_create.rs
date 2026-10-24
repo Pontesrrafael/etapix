@@ -51,14 +51,3 @@ fn new_files_read_back_as_saved() {
     assert!(created > 120, "only {created} of {} projects created", files.len());
     assert!(failures.is_empty(), "{} files differ:\n{}", failures.len(), failures.join("\n"));
 }
-
-#[test]
-fn unsupported_projects_are_refused_with_a_reason() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus/b1/S8-unidades-50.mpp");
-    let mut project = read_project(&mpp_to_mspdi(&std::fs::read(path).unwrap()).unwrap()).unwrap();
-    project.assignments[0].overtime_work = 60;
-    let cals = Calendars::new(&project).unwrap();
-    let schedule = cpm::schedule(&project, &cals, None).unwrap();
-    let err = create_mpp(&write_project(&project, &cals, &schedule, "teste")).unwrap_err();
-    assert!(err.0.contains("horas extras") && err.0.contains("Microsoft Project"), "{}", err.0);
-}

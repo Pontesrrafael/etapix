@@ -7,11 +7,12 @@
 //! (tasks, links or assignments added or removed, outline, resources, calendars, project
 //! options) are not written yet: [`update_mpp`] refuses them, so the caller can save another way.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{NaiveDateTime, Timelike};
 use roxmltree::Document;
 
+use super::create::{calendar_blob, CAL_OWN_TIME_BIT, CAL_RESOURCE, CAL_UID, CALENDAR_VAR_FLAGS, CV_WORKING_TIME};
 use super::*;
 use crate::calendar::Calendar;
 use crate::model::{Project, Resource, Task};
@@ -30,7 +31,7 @@ fn uid_offset(table: &str) -> Option<usize> {
         "TBkndTask" => Some(T_UID),
         "TBkndRsc" => Some(R_UID),
         "TBkndAssn" => Some(A_UID),
-        "TBkndCal" => Some(8),
+        "TBkndCal" => Some(CAL_UID),
         _ => None,
     }
 }
@@ -64,7 +65,6 @@ const L_TYPE: usize = 12;
 const L_LAG: usize = 14;
 const L_LAG_FORMAT: usize = 18;
 // Assignment record fields the reader does not need. Work is in thousandths of a minute.
-const A_REGULAR_WORK: usize = 36;
 const A_REMAINING_WORK: usize = 44;
 const A_RESUME: usize = 60;
 const A_STOP: usize = 104;
@@ -141,6 +141,19 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
         let at = tasks.find(T_UID, new.uid as u32).ok_or_else(|| MppError(format!("tarefa {} não encontrada no .mpp", new.uid)))?;
         let progress = dates.assignments.iter().find(|a| a.task == new.uid as u32).map(|a| (a.stop, a.resume));
         write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid), progress.unwrap_or_default());
+    }
+    tasks.save(&mut file)?;
+
+    let calendars = CalendarPairs::of(&before, &after)?;
+    write_calendars(&mut file, &before, &after, &calendars)?;
+    let mut tasks = Store::load(&file, "TBkndTask");
+    for (old, new) in before.tasks.iter().zip(&after.tasks) {
+        let file_uid = |p: &Project, c: Option<usize>| c.and_then(|c| p.calendars[c].source_uid);
+        let uid = new.calendar.map(|c| calendars.file_uid(&before, c)).transpose()?.flatten();
+        if file_uid(&before, old.calendar) != uid {
+            let at = tasks.find(T_UID, new.uid as u32).ok_or_else(|| MppError(format!("tarefa {} não encontrada no .mpp", new.uid)))?;
+            put_u32(tasks.record(at), T_CALENDAR, uid.map_or(u32::MAX, |u| u as u32));
+        }
     }
     tasks.save(&mut file)?;
 
@@ -263,19 +276,13 @@ fn same_structure(before: &Project, after: &Project) -> Result<()> {
     let resources = |p: &Project| {
         p.resources
             .iter()
-            .map(|r| format!("{} {:?} {:?}", r.uid, r.kind, r.calendar.map(|c| working_time(&p.calendars[c]))))
+            .map(|r| format!("{} {:?}", r.uid, r.kind))
             .collect::<Vec<_>>()
     };
     if resources(before) != resources(after) {
         return unsupported("recursos alterados");
     }
-    if working_time(&before.calendars[before.calendar]) != working_time(&after.calendars[after.calendar]) {
-        return unsupported("calendários alterados");
-    }
-    let task_calendar = |p: &Project, t: &Task| t.calendar.map(|c| working_time(&p.calendars[c]));
-    if before.tasks.iter().zip(&after.tasks).any(|(a, b)| task_calendar(before, a) != task_calendar(after, b)) {
-        return unsupported("calendário de tarefa alterado");
-    }
+
     let options = |p: &Project| (p.start, p.critical_slack_limit, p.multiple_critical_paths, p.honor_constraints, p.status_date);
     if options(before) != options(after) {
         return unsupported("opções do projeto alteradas");
@@ -386,6 +393,62 @@ fn write_progress(r: &mut [u8], q: &crate::model::Progress, stop: Option<NaiveDa
     put_date(r, T_STOP, stop);
     put_date(r, T_RESUME, resume);
     put_date(r, T_STARTED_AT, started);
+}
+
+/// Which calendar of the saved project is which calendar of the file: matched by what uses them
+/// (the project, each resource, each task), since the two lists need not be in the same order.
+struct CalendarPairs {
+    /// (index in the file's project, index in the saved project).
+    pairs: Vec<(usize, usize)>,
+}
+
+impl CalendarPairs {
+    fn of(before: &Project, after: &Project) -> Result<Self> {
+        let mut pairs = vec![(before.calendar, after.calendar)];
+        let users = before.resources.iter().zip(&after.resources).map(|(a, b)| (a.calendar, b.calendar));
+        let users = users.chain(before.tasks.iter().zip(&after.tasks).map(|(a, b)| (a.calendar, b.calendar)));
+        for (old, new) in users {
+            if let (Some(o), Some(n)) = (old, new) {
+                if !pairs.iter().any(|&(_, m)| m == n) {
+                    pairs.push((o, n));
+                }
+            }
+        }
+        if pairs.iter().map(|p| p.0).collect::<HashSet<_>>().len() != pairs.len() {
+            return err("calendários trocados entre tarefas ou recursos: essa alteração ainda não pode ser gravada direto no .mpp");
+        }
+        Ok(CalendarPairs { pairs })
+    }
+
+    /// The UID in the file of the saved project's calendar `c`.
+    fn file_uid(&self, before: &Project, c: usize) -> Result<Option<i64>> {
+        match self.pairs.iter().find(|p| p.1 == c) {
+            Some(&(o, _)) => Ok(before.calendars[o].source_uid),
+            None => err("calendário novo numa tarefa: essa alteração ainda não pode ser gravada direto no .mpp"),
+        }
+    }
+}
+
+/// Calendars whose working time changed get it written over their own record, found by the UID
+/// they had in the file.
+fn write_calendars(file: &mut cfb::Compound, before: &Project, after: &Project, pairs: &CalendarPairs) -> Result<()> {
+    let mut calendars = Store::load(file, "TBkndCal");
+    for &(o, n) in &pairs.pairs {
+        let (old, new) = (&before.calendars[o], &after.calendars[n]);
+        // A calendar that follows the project's, before and after, inherits its change.
+        let follows = |p: &Project, c: &Calendar| working_time(c) == working_time(&p.calendars[p.calendar]);
+        if working_time(old) == working_time(new) || (o != before.calendar && follows(before, old) && follows(after, new)) {
+            continue;
+        }
+        let uid = old.source_uid.ok_or_else(|| MppError("calendário sem UID no .mpp".into()))? as u32;
+        let at = calendars.find_calendar(uid).ok_or_else(|| MppError(format!("calendário {uid} não encontrado no .mpp")))?;
+        let record = calendars.record(at);
+        let derived = record.len() == 16 || i32_at(record, CAL_RESOURCE) > 0;
+        let base = derived.then(|| &after.calendars[after.calendar]);
+        calendars.set_or_add_var(uid, CV_WORKING_TIME, CALENDAR_VAR_FLAGS, calendar_blob(new, base));
+        set_flag(calendars.item(at), CAL_OWN_TIME_BIT, true);
+    }
+    calendars.save(file)
 }
 
 /// Writes resource `new` over the record that holds `old`: name, maximum units and rates (the
@@ -515,12 +578,14 @@ struct AssignmentDates {
     material_span: Option<f64>,
     /// What a cost resource charges (currency), for a cost resource's assignment.
     cost: Option<f64>,
+    /// Part of the work done as overtime (minutes).
+    overtime: f64,
 }
 
 impl AssignmentDates {
     /// An assignment that has not started: all its work remains, from its start.
     fn unstarted(task: u32, resource: u32, units: f64, work: f64, start: NaiveDateTime, finish: NaiveDateTime) -> Self {
-        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None, cost: None }
+        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None, cost: None, overtime: 0.0 }
     }
 
     /// The assignment of a material resource on a task of `span` working minutes: its work is a
@@ -575,6 +640,7 @@ impl Dates {
                     resume,
                     material_span: None,
                     cost: n.children().find(|c| c.has_tag_name("Cost")).and_then(|c| c.text()).and_then(|c| c.parse::<f64>().ok()).map(|cents| cents / 100.0),
+                    overtime: parse_duration(&child(n, "OvertimeWork")).map_or(0.0, |m| m as f64),
                 });
             }
         }
@@ -660,6 +726,20 @@ impl Store {
         r.len() > A_FINISH && !is_deleted(&self.meta[item.clone()]) && u32_at(r, A_TASK) == task
     }
 
+    /// A calendar's record: 12 bytes (base, resource, UID), or 16 starting with the UID for some
+    /// resource calendars.
+    fn find_calendar(&self, uid: u32) -> Option<usize> {
+        self.rows.iter().position(|(item, r, _)| {
+            let r = &self.data[r.clone()];
+            let own = match r.len() {
+                12 => u32_at(r, CAL_UID),
+                16 if u32_at(r, 0) < 0xFFFF_0000 => u32_at(r, 0),
+                _ => return false,
+            };
+            own == uid && !is_deleted(&self.meta[item.clone()])
+        })
+    }
+
     fn find(&self, offset: usize, value: u32) -> Option<usize> {
         self.find_live(|r| u32_at(r, offset) == value)
     }
@@ -679,10 +759,14 @@ impl Store {
         let r = self.record(row);
         let uid = u32_at(r, A_UID);
         let remaining = a.work - a.actual;
-        let changed = f64_at(r, A_WORK) != a.work * 1000.0 || f64_at(r, A_UNITS) != a.units * 10000.0 || f64_at(r, A_ACTUAL_WORK) != a.actual * 1000.0;
+        let regular = a.work - a.overtime;
+        let changed = f64_at(r, A_WORK) != a.work * 1000.0
+            || f64_at(r, A_UNITS) != a.units * 10000.0
+            || f64_at(r, A_ACTUAL_WORK) != a.actual * 1000.0
+            || f64_at(r, A_REGULAR_WORK) != regular * 1000.0;
         put_f64(r, A_UNITS, a.units * 10000.0);
         put_f64(r, A_WORK, a.work * 1000.0);
-        put_f64(r, A_REGULAR_WORK, a.work * 1000.0);
+        put_f64(r, A_REGULAR_WORK, regular * 1000.0);
         put_f64(r, A_ACTUAL_WORK, a.actual * 1000.0);
         put_f64(r, A_REMAINING_WORK, remaining * 1000.0);
         put_date(r, A_START, Some(a.start));
@@ -703,8 +787,9 @@ impl Store {
         }
         let mut contour = contour[..UNIFORM_CONTOUR_LEN].to_vec();
         let rate = a.rate();
-        uniform_segment(&mut contour, C_FIRST, rate, remaining, a.span(remaining));
-        let tail = closing_copy(rate, remaining, a.span(remaining));
+        let regular_left = (remaining - a.overtime).max(0.0);
+        uniform_segment(&mut contour, C_FIRST, rate, regular_left, a.span(regular_left));
+        let tail = closing_copy(rate, regular_left, a.span(regular_left));
         contour[C_TAIL..].copy_from_slice(&tail);
         if a.actual > 0.0 {
             contour.extend_from_slice(&tail);

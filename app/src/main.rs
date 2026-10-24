@@ -1173,7 +1173,7 @@ impl App {
                 acts.push(Act::HelpCenter);
             }
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Os arquivos .mpp são lidos, criados e salvos pelo próprio Etapix; num .mpp existente, inclusões e exclusões usam o Microsoft Project instalado, se houver.").color(Color32::from_gray(110)));
+            ui.label(egui::RichText::new("Os arquivos .mpp são lidos, criados e salvos pelo próprio Etapix: o Microsoft Project não é necessário.").color(Color32::from_gray(110)));
         });
         acts
     }

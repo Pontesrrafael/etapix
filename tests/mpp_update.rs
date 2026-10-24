@@ -183,3 +183,62 @@ fn resource_edits_read_back_from_the_saved_file() {
     assert!(saved * 10 > files.len() * 9, "only {saved} of {} files saved", files.len());
     assert!(failures.is_empty(), "{} files differ:\n{}", failures.len(), failures.join("\n"));
 }
+
+/// Calendars edited (a holiday, a shorter Friday): written into the file, they read back as
+/// Etapix saved them.
+#[test]
+fn calendar_edits_read_back_from_the_saved_file() {
+    let mut files = Vec::new();
+    corpus(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus"), &mut files);
+    files.sort();
+    let (mut saved, mut failures) = (0, Vec::new());
+    for f in &files {
+        let original = std::fs::read(f).unwrap();
+        let mut project = read_project(&mpp_to_mspdi(&original).unwrap()).unwrap();
+        edits::edit_calendars(&mut project);
+        let cals = Calendars::new(&project).unwrap();
+        let schedule = cpm::schedule(&project, &cals, None).unwrap();
+        let xml = write_project(&project, &cals, &schedule, "teste");
+        let Ok(bytes) = save_mpp(&original, &xml) else { continue };
+        saved += 1;
+        let (saved_project, read) = (read_project(&xml).unwrap(), read_project(&mpp_to_mspdi(&bytes).unwrap()).unwrap());
+        let (expected, got) = (describe::describe(&saved_project), describe::describe(&read));
+        if let Some((e, g)) = expected.iter().zip(&got).find(|(e, g)| e != g && !e.contains(" sum true ")) {
+            failures.push(format!("{}:\n   saved {e}\n   read  {g}", f.display()));
+        } else if expected.len() != got.len() {
+            failures.push(format!("{}: {} vs {} items", f.display(), expected.len(), got.len()));
+        }
+    }
+    assert!(saved > 190, "only {saved} of {} files saved", files.len());
+    assert!(failures.is_empty(), "{} files differ:\n{}", failures.len(), failures.join("\n"));
+}
+
+
+/// Overtime on an assignment: written into the file, it reads back as Etapix saved it.
+#[test]
+fn overtime_reads_back_from_the_saved_file() {
+    let mut files = Vec::new();
+    corpus(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus"), &mut files);
+    files.sort();
+    let (mut saved, mut failures) = (0, Vec::new());
+    for f in &files {
+        let original = std::fs::read(f).unwrap();
+        let mut project = read_project(&mpp_to_mspdi(&original).unwrap()).unwrap();
+        edits::add_overtime(&mut project);
+        let cals = Calendars::new(&project).unwrap();
+        let schedule = cpm::schedule(&project, &cals, None).unwrap();
+        let xml = write_project(&project, &cals, &schedule, "teste");
+        let Ok(bytes) = save_mpp(&original, &xml) else { continue };
+        saved += 1;
+        let (saved_project, read) = (read_project(&xml).unwrap(), read_project(&mpp_to_mspdi(&bytes).unwrap()).unwrap());
+        let (expected, got) = (describe::describe(&saved_project), describe::describe(&read));
+        if let Some((e, g)) = expected.iter().zip(&got).find(|(e, g)| e != g && !e.contains(" sum true ")) {
+            failures.push(format!("{}:\n   saved {e}\n   read  {g}", f.display()));
+        } else if expected.len() != got.len() {
+            failures.push(format!("{}: {} vs {} items", f.display(), expected.len(), got.len()));
+        }
+    }
+    assert!(saved > 190, "only {saved} of {} files saved", files.len());
+    assert!(failures.is_empty(), "{} files differ:\n{}", failures.len(), failures.join("\n"));
+}
+

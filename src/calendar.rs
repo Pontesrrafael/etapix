@@ -37,6 +37,9 @@ pub struct Calendar {
     pub weekdays: [Vec<Shift>; 7],
     /// Later entries win when ranges overlap (a resource's own exceptions follow its base's).
     pub exceptions: Vec<Exception>,
+    /// The calendar's UID in the file it was read from, when it came from one: saving into that
+    /// file again writes over that calendar.
+    pub source_uid: Option<i64>,
 }
 
 impl Calendar {
@@ -47,6 +50,7 @@ impl Calendar {
             name: "Standard".into(),
             weekdays: [vec![], day.clone(), day.clone(), day.clone(), day.clone(), day, vec![]],
             exceptions: vec![],
+            source_uid: None,
         }
     }
 

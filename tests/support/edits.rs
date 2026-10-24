@@ -121,3 +121,32 @@ pub fn edit_resources(p: &mut Project) {
         }
     }
 }
+
+/// Calendars edited: a holiday a week in and a shorter Friday, on the project calendar when no
+/// resource calendar derives from it (Etapix's model keeps calendars flattened, without what they
+/// derive from), and the same holiday on every other calendar a task uses.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn edit_calendars(p: &mut Project) {
+    let holiday = (p.start + chrono::Duration::days(7)).date();
+    let day_off = pjsched::calendar::Exception { from: holiday, to: holiday, shifts: vec![] };
+    let project = p.calendar;
+    if p.resources.is_empty() {
+        p.calendars[project].exceptions.push(day_off.clone());
+        p.calendars[project].weekdays[5] = vec![(9 * 60, 12 * 60)];
+    }
+    let mut used: Vec<usize> = p.tasks.iter().filter_map(|t| t.calendar).filter(|&c| c != project).collect();
+    used.sort_unstable();
+    used.dedup();
+    for c in used {
+        p.calendars[c].exceptions.push(day_off.clone());
+    }
+}
+
+/// An hour of the first work assignment done as overtime.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn add_overtime(p: &mut Project) {
+    let work = |a: &pjsched::model::Assignment| p.resources[a.resource].kind == pjsched::model::ResourceKind::Work && a.work() > 120.0;
+    if let Some(k) = p.assignments.iter().position(work) {
+        p.assignments[k].overtime_work = 60;
+    }
+}

@@ -27,8 +27,10 @@ const PROTO_RESOURCE_CALENDAR: u32 = 3;
 const BASE_CALENDAR: u32 = 1;
 // Calendar variable data: name and working time, with the entry flags Project gives them.
 const CV_NAME: u16 = 1;
-const CV_WORKING_TIME: u16 = 8;
-const CALENDAR_VAR_FLAGS: u16 = 0x0D40;
+pub(super) const CV_WORKING_TIME: u16 = 8;
+pub(super) const CALENDAR_VAR_FLAGS: u16 = 0x0D40;
+/// The item bit of a calendar that has its own working time (byte 8, bit 6).
+pub(super) const CAL_OWN_TIME_BIT: (usize, u8) = (8, 6);
 const DAY_LEN: usize = 60;
 const EXCEPTION_LEN: usize = 92;
 /// An exception for a plain range of dates, and the closing value Project writes with it.
@@ -36,8 +38,8 @@ const EXCEPTION_DATED: u32 = 1;
 const EXCEPTION_RANGE_END: u32 = 2;
 // Calendar record (12 bytes): base calendar, resource, calendar UID.
 const CAL_BASE: usize = 0;
-const CAL_RESOURCE: usize = 4;
-const CAL_UID: usize = 8;
+pub(super) const CAL_RESOURCE: usize = 4;
+pub(super) const CAL_UID: usize = 8;
 // Second blocks hold the GUIDs that tie the tables together: a task's own (at 0), its display
 // order (f64 at 16) and its parent's (at 24: the project summary for top-level tasks); a link's
 // own, its predecessor's and its successor's; an assignment's own, its task's and its resource's;
@@ -72,7 +74,6 @@ const L_SUCCESSOR: usize = 8;
 /// A new `.mpp` holding the project of `xml` (Project XML, as Etapix writes it).
 pub fn create_mpp(xml: &str) -> Result<Vec<u8>> {
     let project = read_project(xml).map_err(|e| MppError(e.0))?;
-    check_supported(&project)?;
     let mut file = template()?;
     let guids = Guids::of(&file, &project, false);
     let calendars = build_calendars(&mut file, &project, &guids)?;
@@ -86,8 +87,6 @@ pub fn create_mpp(xml: &str) -> Result<Vec<u8>> {
 /// formats and fields Etapix does not show), new ones come from the template, and removed ones go.
 pub fn restructure_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     let project = read_project(xml).map_err(|e| MppError(e.0))?;
-    let before = read_project(&mpp_to_mspdi(original)?).map_err(|e| MppError(e.0))?;
-    check_new_resources(&before, &project)?;
     let mut file = cfb::Compound::parse(original).map_err(|e| MppError(e.0))?;
     let guids = Guids::of(&file, &project, true);
     let calendars = extend_calendars(&mut file, &project, &guids)?;
@@ -108,22 +107,6 @@ fn lay_out(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &Cal
     build_links(file, p, guids, keep)?;
     build_resources(file, p, guids, calendars, keep)?;
     build_assignments(file, p, guids, keep)
-}
-
-/// What a new file cannot hold yet.
-fn check_supported(p: &Project) -> Result<()> {
-    let unsupported = |what: &str| err(format!("{what}: um .mpp novo com isso ainda precisa do Microsoft Project"));
-    if p.assignments.iter().any(|a| a.overtime_work > 0) {
-        return unsupported("horas extras");
-    }
-    Ok(())
-}
-
-/// What new resources in an existing file cannot be yet (its own records keep whatever they have).
-fn check_new_resources(before: &Project, after: &Project) -> Result<()> {
-    let known: HashSet<i64> = before.resources.iter().map(|r| r.uid).collect();
-    let new = Project { resources: after.resources.iter().filter(|r| !known.contains(&r.uid)).cloned().collect(), tasks: Vec::new(), assignments: Vec::new(), ..after.clone() };
-    check_supported(&new)
 }
 
 /// One record of a table, with its items and variable values, ready to be laid out again.
@@ -427,7 +410,7 @@ fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Resu
     calendars.rows.retain(|r| r.record.len() != 12 || u32_at(&r.record, CAL_UID) != PROTO_RESOURCE_CALENDAR);
     let base = calendars.rows.iter_mut().find(|r| r.record.len() == 12 && u32_at(&r.record, CAL_UID) == BASE_CALENDAR).ok_or_else(|| MppError("modelo sem calendário base".into()))?;
     let project_calendar = &p.calendars[p.calendar];
-    set_working_time(base, project_calendar);
+    set_working_time(base, project_calendar, None);
     let base_proto = base.clone();
     let mut next_uid = PROTO_RESOURCE_CALENDAR..;
     let mut out = CalendarUids { resources: BTreeMap::new(), tasks: HashMap::new() };
@@ -435,7 +418,7 @@ fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Resu
         let mut row = resource_calendar(&resource_proto, r.uid, uid, guid);
         // A resource's own working time; without it the calendar follows the project's.
         if let Some(own) = r.calendar.map(|c| &p.calendars[c]).filter(|c| working_time(c) != working_time(project_calendar)) {
-            set_working_time(&mut row, own);
+            set_working_time(&mut row, own, Some(project_calendar));
         }
         calendars.rows.push(row);
         out.resources.insert(r.uid, uid);
@@ -449,7 +432,7 @@ fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Resu
         put_u32(&mut row.record, CAL_UID, uid);
         put_guid(&mut row.record2, G_SELF, &new_guid());
         set_or_add_var(&mut row.vars, CV_NAME, CALENDAR_VAR_FLAGS, utf16z(&p.calendars[c].name));
-        set_working_time(&mut row, &p.calendars[c]);
+        set_working_time(&mut row, &p.calendars[c], None);
         calendars.rows.push(row);
         out.tasks.insert(c, uid);
     }
@@ -500,12 +483,17 @@ fn resource_calendar(proto: &Row, resource: i64, uid: u32, guid: &Guid) -> Row {
 
 /// A calendar's working time as Project stores it: seven weekday blocks (Sunday first), the
 /// number of exceptions at 420, the exceptions (92 bytes each, from 424), and 4 closing bytes.
-fn calendar_blob(c: &Calendar) -> Vec<u8> {
-    // A day as Project's default week has it is stored as "default" (type 1), as Project does.
+///
+/// A day the same as the default is stored as "default" (type 1), as Project does: for a base
+/// calendar the default is Project's default week, for a calendar derived from `base` it is the
+/// base's day, and the base's exceptions are inherited, not repeated.
+pub(super) fn calendar_blob(c: &Calendar, base: Option<&Calendar>) -> Vec<u8> {
     let standard = Calendar::standard();
-    let mut out: Vec<u8> = c.weekdays.iter().zip(&standard.weekdays).flat_map(|(d, s)| if d == s { default_block() } else { shift_block(d) }).collect();
-    out.extend_from_slice(&(c.exceptions.len() as u32).to_le_bytes());
-    for e in &c.exceptions {
+    let defaults = base.unwrap_or(&standard);
+    let mut out: Vec<u8> = c.weekdays.iter().zip(&defaults.weekdays).flat_map(|(d, s)| if d == s { default_block() } else { shift_block(d) }).collect();
+    let own: Vec<_> = c.exceptions.iter().filter(|e| !base.is_some_and(|b| b.exceptions.contains(e))).collect();
+    out.extend_from_slice(&(own.len() as u32).to_le_bytes());
+    for e in own {
         let mut entry = [0u8; EXCEPTION_LEN];
         put_u16(&mut entry, 0, (e.from - epoch()).num_days() as u16);
         put_u16(&mut entry, 2, (e.to - epoch()).num_days() as u16);
@@ -665,9 +653,10 @@ fn set_var(vars: &mut [(u16, u16, Vec<u8>)], ty: u16, value: Vec<u8>) {
     }
 }
 
-/// Gives a calendar record its own working time; its item says so (bit 6 of byte 8), or Project
-/// ignores the stored times and uses the defaults.
-fn set_working_time(row: &mut Row, c: &Calendar) {
-    set_or_add_var(&mut row.vars, CV_WORKING_TIME, CALENDAR_VAR_FLAGS, calendar_blob(c));
-    set_flag(&mut row.item, (8, 6), true);
+/// Gives a calendar record its own working time (only what differs from `base`, for a derived
+/// calendar); its item says so (bit 6 of byte 8), or Project ignores the stored times and uses
+/// the defaults.
+fn set_working_time(row: &mut Row, c: &Calendar, base: Option<&Calendar>) {
+    set_or_add_var(&mut row.vars, CV_WORKING_TIME, CALENDAR_VAR_FLAGS, calendar_blob(c, base));
+    set_flag(&mut row.item, CAL_OWN_TIME_BIT, true);
 }

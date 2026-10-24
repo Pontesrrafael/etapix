@@ -76,7 +76,7 @@ fn handle(msg: &Value) -> Option<Value> {
 
 const INSTRUCTIONS: &str = "Etapix: cronogramas compatíveis com o Microsoft Project. Use caminhos absolutos. \
 Crie com criar_projeto, adicione tarefas com adicionar_tarefas (nivel 1 = topo; uma tarefa seguida de outras com nivel maior vira resumo), \
-confira datas e caminho crítico com ler_projeto. Arquivos .mpp abrem, são criados e salvos sem o Microsoft Project (andamento, linha de base, recursos materiais e horas extras ainda precisam dele); .xml funciona sempre.";
+confira datas e caminho crítico com ler_projeto. Arquivos .mpp e .xml abrem, são criados e salvos sem o Microsoft Project.";
 
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "Caminho absoluto do arquivo do projeto (.xml ou .mpp)." });

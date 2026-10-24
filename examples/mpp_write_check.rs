@@ -35,6 +35,8 @@ fn main() {
         Some((cmd, rest)) if cmd == "prepare-baseline" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Baseline),
         Some((cmd, rest)) if cmd == "prepare-cost" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Cost),
         Some((cmd, rest)) if cmd == "prepare-resources" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Resources),
+        Some((cmd, rest)) if cmd == "prepare-calendars" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Calendars),
+        Some((cmd, rest)) if cmd == "prepare-overtime" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Overtime),
         Some((cmd, rest)) if cmd == "verify" && rest.len() == 1 => verify(Path::new(&rest[0])),
         _ => eprintln!("uso: mpp_write_check prepare SAIDA arquivo.mpp... | verify SAIDA"),
     }
@@ -57,6 +59,10 @@ enum Mode {
     Cost,
     /// Resources renamed, with more units and new rates, saved into the file.
     Resources,
+    /// Holidays and working hours changed on the calendars, saved into the file.
+    Calendars,
+    /// An hour of overtime on an assignment, saved into the file.
+    Overtime,
 }
 
 fn prepare(out: &Path, files: &[String], mode: Mode) {
@@ -75,6 +81,8 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
             Mode::Baseline => edits::baseline(&mut project),
             Mode::Cost => edits::add_cost(&mut project),
             Mode::Resources => edits::edit_resources(&mut project),
+            Mode::Calendars => edits::edit_calendars(&mut project),
+            Mode::Overtime => edits::add_overtime(&mut project),
             Mode::New => {}
         }
         let cals = Calendars::new(&project).unwrap();
@@ -85,7 +93,7 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
         let saved = match mode {
             Mode::Edit => update_mpp(&original, &xml),
             Mode::New => create_mpp(&xml),
-            Mode::Structure | Mode::Progress | Mode::Baseline | Mode::Cost | Mode::Resources => save_mpp(&original, &xml),
+            Mode::Structure | Mode::Progress | Mode::Baseline | Mode::Cost | Mode::Resources | Mode::Calendars | Mode::Overtime => save_mpp(&original, &xml),
         };
         match saved {
             Ok(bytes) => {

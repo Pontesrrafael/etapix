@@ -84,7 +84,7 @@ fn temp_dir() -> PathBuf {
 
 #[cfg(not(windows))]
 fn convert(_: &Path, _: &Path, _: &str) -> Result<(), String> {
-    Err("arquivos .mpp precisam do Microsoft Project, que só existe no Windows. Salve ou abra como \
+    Err("o Microsoft Project, a alternativa para este arquivo, não existe no Linux. Salve ou abra como \
          Project XML (.xml): o Project abre e salva esse formato."
         .into())
 }
@@ -300,5 +300,41 @@ mod tests {
         assert!(added_xml.unwrap().contains("<Name>Nova</Name>"));
         assert_eq!(created, Ok(None));
         assert!(super::read_mpp(&new_file).is_ok());
+    }
+
+    /// A user's session on a .mpp without Project: every kind of change the app makes is saved
+    /// into the file itself and opens again as it was saved, with no notice.
+    #[test]
+    fn whole_session_saves_without_project() {
+        let _only = NO_PROJECT.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ETAPIX_PROJECT_PROGID", "Etapix.ProjetoInexistente");
+        let dir = std::env::temp_dir().join("etapix-mpp-session-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sessao.mpp");
+        std::fs::copy(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/mpp-corpus/b1/S8-unidades-50.mpp"), &file).unwrap();
+        let mut doc = crate::doc::Doc::open(&file).unwrap();
+        let steps: Vec<Result<(), String>> = vec![
+            doc.add_task("Montagem", 2.0).map(|_| ()),
+            doc.set_predecessors(2, "1"),
+            doc.add_resource("Equipe B"),
+            doc.set_resources(2, "Equipe B"),
+            doc.set_duration_days(0, 3.0),
+            doc.set_percent(0, 50),
+            doc.save_baseline(),
+            doc.set_manual(1, true),
+            doc.indent(2),
+        ];
+        let saved = doc.save(&file);
+        let expected = super::read_mpp(&file).map(|_| doc.project.tasks.iter().map(|t| (t.uid, t.name.clone(), t.duration, t.progress.percent_complete, t.baseline.is_some(), t.manual.is_some(), t.parent)).collect::<Vec<_>>());
+        let reopened = crate::doc::Doc::open(&file);
+        std::env::remove_var("ETAPIX_PROJECT_PROGID");
+        for (k, step) in steps.into_iter().enumerate() {
+            step.unwrap_or_else(|e| panic!("step {k}: {e}"));
+        }
+        assert_eq!(saved, Ok(None));
+        let reopened = reopened.unwrap();
+        let got: Vec<_> = reopened.project.tasks.iter().map(|t| (t.uid, t.name.clone(), t.duration, t.progress.percent_complete, t.baseline.is_some(), t.manual.is_some(), t.parent)).collect();
+        assert_eq!(expected.unwrap(), got);
+        assert!(reopened.project.resources.iter().any(|r| r.name == "Equipe B"));
     }
 }
