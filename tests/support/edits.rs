@@ -89,10 +89,12 @@ pub fn baseline(p: &mut Project) {
     pjsched::tracking::save_baseline(p, &cals, &schedule, &costs);
 }
 
-/// A cost resource (a trip) charging 500 on the first task that is not a summary.
+/// A cost resource (a trip) charging 500 on the first task that is an ordinary one: not a summary,
+/// a milestone, started, or scheduled as late as possible (those cases are still to check).
 #[allow(dead_code)] // not every test binary uses every edit set
 pub fn add_cost(p: &mut Project) {
-    let Some(task) = p.tasks.iter().position(|t| !t.summary) else { return };
+    let ordinary = |t: &Task| !t.summary && t.duration > 0 && t.progress.actual_start.is_none() && t.constraint != Constraint::AsLateAsPossible;
+    let Some(task) = p.tasks.iter().position(ordinary) else { return };
     let uid = p.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
     p.resources.push(pjsched::model::Resource {
         uid,
@@ -142,13 +144,30 @@ pub fn edit_calendars(p: &mut Project) {
     }
 }
 
-/// An hour of the first work assignment done as overtime.
+/// An hour of overtime on a task with a single work assignment at full units: as in Project, the
+/// work stays and the task gets an hour shorter.
 #[allow(dead_code)] // not every test binary uses every edit set
 pub fn add_overtime(p: &mut Project) {
-    let work = |a: &pjsched::model::Assignment| p.resources[a.resource].kind == pjsched::model::ResourceKind::Work && a.work() > 120.0;
-    if let Some(k) = p.assignments.iter().position(work) {
-        p.assignments[k].overtime_work = 60;
-    }
+    let single = |k: usize| {
+        let a = &p.assignments[k];
+        let t = &p.tasks[a.task];
+        p.resources[a.resource].kind == pjsched::model::ResourceKind::Work
+            && a.units == 1.0
+            && a.profile.len() == 1
+            && a.profile[0].len > 120
+            && !t.summary
+            && t.manual.is_none()
+            && t.progress.actual_start.is_none()
+            && p.assignments.iter().filter(|b| b.task == a.task).count() == 1
+    };
+    let Some(k) = (0..p.assignments.len()).find(|&k| single(k)) else { return };
+    let total = p.assignments[k].work();
+    let piece = &mut p.assignments[k].profile[0];
+    piece.len -= 60;
+    piece.rate = total / piece.len as f64;
+    p.assignments[k].overtime_work = 60;
+    let task = p.assignments[k].task;
+    p.tasks[task].duration -= 60;
 }
 
 /// Adds an exception where Project keeps it: in date order.
