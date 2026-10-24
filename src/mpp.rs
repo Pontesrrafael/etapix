@@ -29,7 +29,7 @@ use crate::cfb;
 
 mod create;
 mod update;
-pub use create::create_mpp;
+pub use create::{create_mpp, restructure_mpp, save_mpp};
 pub use update::update_mpp;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

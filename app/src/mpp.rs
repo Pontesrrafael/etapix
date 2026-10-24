@@ -3,13 +3,13 @@
 //! - Reading is native ([`pjsched::mpp::mpp_to_mspdi`]): no Microsoft Project needed, on Windows
 //!   or Linux. Only if the native reader cannot make sense of a file does Etapix fall back to the
 //!   installed Project (Windows).
-//! - Writing is native too. Edits to a project opened from a `.mpp` go into that file's own
-//!   tables ([`pjsched::mpp::update_mpp`]); a new file is made from Etapix's template
-//!   ([`pjsched::mpp::create_mpp`]). Changes an existing file cannot take natively (new tasks,
-//!   links, resources...) go through the installed Project, which keeps everything else in the
-//!   file: it opens Etapix's Project XML through its documented COM object model, invisibly, and
-//!   saves it as `.mpp`. Without Project, the file is rebuilt from the template, and the user is
-//!   told what that leaves out.
+//! - Writing is native too. Edits to a project opened from a `.mpp`, tasks, links and
+//!   assignments added or removed included, go into that file's own tables
+//!   ([`pjsched::mpp::save_mpp`]); a new file is made from Etapix's template
+//!   ([`pjsched::mpp::create_mpp`]). What the native writer cannot save yet goes through the
+//!   installed Project, when there is one: it opens Etapix's Project XML through its documented
+//!   COM object model, invisibly, and saves it as `.mpp`. Without Project, the file is rebuilt
+//!   from the template, and the user is told what that leaves out.
 //! - Either way the new file is written next to the target first and replaces it only on
 //!   success, so a failed save never damages the existing file.
 //! - If Project is already open, the conversion runs in that instance (COM attaches to it) and
@@ -182,7 +182,7 @@ pub fn write_mpp(path: &Path, xml: &str, source: Option<&Path>) -> Result<Option
         return write_native(path, pjsched::mpp::create_mpp(xml)).or_else(|why| through_project_or(path, xml, &why)).map(|()| None);
     };
     let original = std::fs::read(base).map_err(|e| format!("{}: {e}", base.display()))?;
-    let Err(why) = write_native(path, pjsched::mpp::update_mpp(&original, xml)) else { return Ok(None) };
+    let Err(why) = write_native(path, pjsched::mpp::save_mpp(&original, xml)) else { return Ok(None) };
     match write_through_project(path, xml) {
         Ok(()) => Ok(None),
         Err(com) if !project_missing(&com) => Err(com),

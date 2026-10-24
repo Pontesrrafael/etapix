@@ -5,7 +5,8 @@
 //!    ([`pjsched::mpp::update_mpp`]) as `OUT/NAME.mpp`, and what Etapix expects as
 //!    `OUT/NAME.expected.txt`.
 //!    `prepare-new OUT FILE.mpp...` instead saves each project, unedited, as a new file
-//!    ([`pjsched::mpp::create_mpp`]).
+//!    ([`pjsched::mpp::create_mpp`]); `prepare-structure OUT FILE.mpp...` adds and removes tasks,
+//!    links and assignments and saves into a copy of the file ([`pjsched::mpp::save_mpp`]).
 //! 2. Project opens every `OUT/*.mpp` and saves it as `OUT/NAME.proj.xml`
 //!    (`tools/mpp_to_xml.ps1 OUT`).
 //! 3. `verify OUT`: Project's reading must match what Etapix expects, schedule included.
@@ -15,7 +16,7 @@ use std::path::Path;
 use pjsched::calendar::Calendars;
 use pjsched::cpm;
 use pjsched::model::Project;
-use pjsched::mpp::{create_mpp, mpp_to_mspdi, update_mpp};
+use pjsched::mpp::{create_mpp, mpp_to_mspdi, save_mpp, update_mpp};
 use pjsched::mspdi::read_project;
 use pjsched::mspdi_write::write_project;
 
@@ -27,15 +28,26 @@ mod edits;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.split_first() {
-        Some((cmd, rest)) if cmd == "prepare" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], false),
-        Some((cmd, rest)) if cmd == "prepare-new" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], true),
+        Some((cmd, rest)) if cmd == "prepare" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Edit),
+        Some((cmd, rest)) if cmd == "prepare-new" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::New),
+        Some((cmd, rest)) if cmd == "prepare-structure" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Structure),
         Some((cmd, rest)) if cmd == "verify" && rest.len() == 1 => verify(Path::new(&rest[0])),
         _ => eprintln!("uso: mpp_write_check prepare SAIDA arquivo.mpp... | verify SAIDA"),
     }
 }
 
-/// With `new`, each project is saved as a new file (from the template) instead of edited.
-fn prepare(out: &Path, files: &[String], new: bool) {
+/// How each project is changed and saved.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    /// Fields edited, saved into the file.
+    Edit,
+    /// Saved, unedited, as a new file from the template.
+    New,
+    /// Tasks, links and assignments added and removed, saved into the file.
+    Structure,
+}
+
+fn prepare(out: &Path, files: &[String], mode: Mode) {
     std::fs::create_dir_all(out).unwrap();
     for f in files {
         let original = std::fs::read(f).unwrap();
@@ -44,15 +56,21 @@ fn prepare(out: &Path, files: &[String], new: bool) {
         let folder = path.parent().and_then(|d| d.file_name()).map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
         let name = format!("{folder}-{}", path.file_stem().unwrap().to_string_lossy());
         let mut project = read_project(&mpp_to_mspdi(&original).unwrap()).unwrap();
-        if !new {
-            edits::edit(&mut project);
+        match mode {
+            Mode::Edit => edits::edit(&mut project),
+            Mode::Structure => edits::restructure(&mut project),
+            Mode::New => {}
         }
         let cals = Calendars::new(&project).unwrap();
         let schedule = cpm::schedule(&project, &cals, None).unwrap();
         let xml = write_project(&project, &cals, &schedule, &name);
         // Etapix's own reading of what it saves is what Project must read too.
         let expected = read_project(&xml).unwrap();
-        let saved = if new { create_mpp(&xml) } else { update_mpp(&original, &xml) };
+        let saved = match mode {
+            Mode::Edit => update_mpp(&original, &xml),
+            Mode::New => create_mpp(&xml),
+            Mode::Structure => save_mpp(&original, &xml),
+        };
         match saved {
             Ok(bytes) => {
                 std::fs::write(out.join(format!("{name}.mpp")), bytes).unwrap();

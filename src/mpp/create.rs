@@ -8,7 +8,7 @@
 //! project, with its ids and the fields that define the structure. Then [`update_mpp`] writes
 //! every other field and the scheduled dates, the same way it saves edits into any `.mpp`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::update::{set_prop, working_time, put_date, put_f64, put_u16, put_u32, set_flag, F_SUMMARY, PLACEHOLDER_RESOURCE};
 use super::*;
@@ -53,6 +53,10 @@ const G_RESOURCE_AGAIN: usize = 24;
 const TV_DRIVER: u16 = 0x4E3;
 const TV_ROOTS: u16 = 0x4E4;
 const TV_LINKED: u16 = 0x4E5;
+/// The value Project gives `TV_LINKED` on every task with predecessors.
+const LINKED: [u8; 8] = [1, 0, 0, 0, 1, 0, 0xFF, 0xFF];
+/// Entry flags of a task's variable data.
+const TASK_VAR_FLAGS: u16 = 0x0B40;
 const L_UID: usize = 0;
 const L_PREDECESSOR: usize = 4;
 const L_SUCCESSOR: usize = 8;
@@ -63,15 +67,41 @@ const RESOURCE_WORK_FLAG: u8 = 0x10;
 pub fn create_mpp(xml: &str) -> Result<Vec<u8>> {
     let project = read_project(xml).map_err(|e| MppError(e.0))?;
     check_supported(&project)?;
-    let mut file = cfb::Compound::parse(TEMPLATE).map_err(|e| MppError(e.0))?;
-    let guids = Guids { tasks: project.tasks.iter().map(|_| new_guid()).collect(), resources: project.resources.iter().map(|_| new_guid()).collect() };
+    let mut file = template()?;
+    let guids = Guids::of(&file, &project, false);
     let calendars = build_calendars(&mut file, &project, &guids)?;
-    build_tasks(&mut file, &project, &guids, &calendars)?;
-    build_links(&mut file, &project, &guids)?;
-    build_resources(&mut file, &project, &guids, &calendars)?;
-    build_assignments(&mut file, &project, &guids)?;
+    lay_out(&mut file, &project, &guids, &calendars, false)?;
     write_options(&mut file, &project)?;
     update_mpp(&file.to_bytes(), xml)
+}
+
+/// `original` with the project of `xml` saved into it when tasks, links, resources or
+/// assignments were added or removed: the file's own records stay as they are (with their views,
+/// formats and fields Etapix does not show), new ones come from the template, and removed ones go.
+pub fn restructure_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
+    let project = read_project(xml).map_err(|e| MppError(e.0))?;
+    let before = read_project(&mpp_to_mspdi(original)?).map_err(|e| MppError(e.0))?;
+    check_new_resources(&before, &project)?;
+    let mut file = cfb::Compound::parse(original).map_err(|e| MppError(e.0))?;
+    let guids = Guids::of(&file, &project, true);
+    let calendars = extend_calendars(&mut file, &project, &guids)?;
+    lay_out(&mut file, &project, &guids, &calendars, true)?;
+    update_mpp(&file.to_bytes(), xml)
+}
+
+/// `original` with the project of `xml` saved into it, keeping everything Etapix does not show:
+/// edits go into the file's own records ([`update_mpp`]); when the structure changed, records are
+/// added and removed ([`restructure_mpp`]).
+pub fn save_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
+    update_mpp(original, xml).or_else(|edit| restructure_mpp(original, xml).map_err(|structure| MppError(format!("{}; {}", edit.0, structure.0))))
+}
+
+/// The records of the project: the file's own (with `keep`) or new ones from the template.
+fn lay_out(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &CalendarUids, keep: bool) -> Result<()> {
+    build_tasks(file, p, guids, calendars, keep)?;
+    build_links(file, p, guids, keep)?;
+    build_resources(file, p, guids, calendars, keep)?;
+    build_assignments(file, p, guids, keep)
 }
 
 /// What a new file cannot hold yet.
@@ -93,6 +123,13 @@ fn check_supported(p: &Project) -> Result<()> {
         return unsupported("linha de base");
     }
     Ok(())
+}
+
+/// What new resources in an existing file cannot be yet (its own records keep whatever they have).
+fn check_new_resources(before: &Project, after: &Project) -> Result<()> {
+    let known: HashSet<i64> = before.resources.iter().map(|r| r.uid).collect();
+    let new = Project { resources: after.resources.iter().filter(|r| !known.contains(&r.uid)).cloned().collect(), tasks: Vec::new(), assignments: Vec::new(), ..after.clone() };
+    check_supported(&new)
 }
 
 /// One record of a table, with its items and variable values, ready to be laid out again.
@@ -254,35 +291,83 @@ fn put_guid(b: &mut [u8], o: usize, g: &Guid) {
     }
 }
 
-/// The GUIDs given to the project's tasks and resources, by index.
+/// The GUIDs of the project's tasks and resources, by index: the file's own for records it keeps,
+/// new ones for the rest.
 struct Guids {
     tasks: Vec<Guid>,
     resources: Vec<Guid>,
 }
 
-fn build_tasks(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &CalendarUids) -> Result<()> {
+impl Guids {
+    fn of(file: &cfb::Compound, p: &Project, keep: bool) -> Self {
+        let own = |name: &'static str, uid_at: usize| -> HashMap<u32, Guid> {
+            if !keep {
+                return HashMap::new();
+            }
+            let rows = Rows::load(file, name, uid_at);
+            rows.rows.iter().filter(|r| r.is_live()).map(|r| (u32_at(&r.record, uid_at), guid_at(&r.record2, G_SELF))).collect()
+        };
+        let (tasks, resources) = (own("TBkndTask", T_UID), own("TBkndRsc", R_UID));
+        Guids {
+            tasks: p.tasks.iter().map(|t| tasks.get(&(t.uid as u32)).copied().unwrap_or_else(new_guid)).collect(),
+            resources: p.resources.iter().map(|r| resources.get(&(r.uid as u32)).copied().unwrap_or_else(new_guid)).collect(),
+        }
+    }
+}
+
+/// The live rows of a table that `keep` (the file's own records are reused), by key.
+fn kept_rows(rows: &Rows, keep: bool, key: impl Fn(&[u8]) -> u64) -> HashMap<u64, Row> {
+    if !keep {
+        return HashMap::new();
+    }
+    rows.rows.iter().filter(|r| r.is_live()).map(|r| (key(&r.record), r.clone())).collect()
+}
+
+/// A prototype from the template, checked to fit the file's own records of that table.
+fn prototype(template: &Rows, file: &Rows, uid: u32) -> Result<Row> {
+    let proto = template.prototype(uid)?;
+    match file.rows.iter().find(|r| r.is_live()) {
+        Some(own) if own.record.len() != proto.record.len() || own.item.len() != proto.item.len() => {
+            err(format!("{}: os registros deste arquivo têm outro formato que o do modelo do Etapix", file.name))
+        }
+        _ => Ok(proto),
+    }
+}
+
+fn template() -> Result<cfb::Compound> {
+    cfb::Compound::parse(TEMPLATE).map_err(|e| MppError(e.0))
+}
+
+fn build_tasks(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &CalendarUids, keep: bool) -> Result<()> {
     let mut tasks = Rows::load(file, "TBkndTask", T_UID);
-    let proto = tasks.prototype(PROTO_TASK)?;
+    let proto = prototype(&Rows::load(&template()?, "TBkndTask", T_UID), &tasks, PROTO_TASK)?;
+    let mut own = kept_rows(&tasks, keep, |r| u32_at(r, T_UID) as u64);
     tasks.retain(|r| u32_at(r, T_UID) == 0);
     // Project's cache of the link network: the summary lists the tasks without predecessors, and
     // each task with predecessors names one of them.
     let roots: Vec<u32> = p.tasks.iter().filter(|t| !t.summary && t.preds.is_empty()).map(|t| t.uid as u32).collect();
-    let summary = tasks.rows.iter_mut().find(|r| r.is_live() && u32_at(&r.record, T_UID) == 0).ok_or_else(|| MppError("modelo sem a tarefa de resumo do projeto".into()))?;
-    set_var(&mut summary.vars, TV_ROOTS, uid_list(&roots));
+    let summary = tasks.rows.iter_mut().find(|r| r.is_live() && u32_at(&r.record, T_UID) == 0).ok_or_else(|| MppError("arquivo sem a tarefa de resumo do projeto".into()))?;
+    set_or_add_var(&mut summary.vars, TV_ROOTS, TASK_VAR_FLAGS, uid_list(&roots));
     let summary_guid = guid_at(&summary.record2, G_SELF);
     for (i, t) in p.tasks.iter().enumerate() {
-        let mut row = proto.clone();
-        put_u32(&mut row.record, T_UID, t.uid as u32);
+        let mut row = own.remove(&(t.uid as u64)).unwrap_or_else(|| {
+            let mut row = proto.clone();
+            put_u32(&mut row.record, T_UID, t.uid as u32);
+            put_u32(&mut row.record, T_CALENDAR, t.calendar.map_or(u32::MAX, |c| calendars.tasks[&c]));
+            set_var(&mut row.vars, TV_NAME, utf16z(&t.name));
+            row
+        });
         put_u32(&mut row.record, T_ID, t.id as u32);
         put_u16(&mut row.record, T_OUTLINE_LEVEL, outline_level(p, t.parent) as u16);
-        put_u32(&mut row.record, T_CALENDAR, t.calendar.map_or(u32::MAX, |c| calendars.tasks[&c]));
         set_flag(&mut row.item, F_SUMMARY, t.summary);
         put_guid(&mut row.record2, G_SELF, &guids.tasks[i]);
         put_f64(&mut row.record2, G_ORDER, (i + 2) as f64);
         put_guid(&mut row.record2, G_PARENT, t.parent.map_or(&summary_guid, |p| &guids.tasks[p]));
-        set_var(&mut row.vars, TV_NAME, utf16z(&t.name));
         match t.preds.first() {
-            Some(l) => set_var(&mut row.vars, TV_DRIVER, uid_list(&[p.tasks[l.pred].uid as u32])),
+            Some(l) => {
+                set_or_add_var(&mut row.vars, TV_DRIVER, TASK_VAR_FLAGS, uid_list(&[p.tasks[l.pred].uid as u32]));
+                set_or_add_var(&mut row.vars, TV_LINKED, TASK_VAR_FLAGS, LINKED.to_vec());
+            }
             None => row.vars.retain(|v| v.0 != TV_DRIVER && v.0 != TV_LINKED),
         }
         tasks.rows.push(row);
@@ -299,19 +384,27 @@ fn outline_level(p: &Project, mut parent: Option<usize>) -> usize {
     level
 }
 
-fn build_links(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Result<()> {
+fn build_links(file: &mut cfb::Compound, p: &Project, guids: &Guids, keep: bool) -> Result<()> {
     let mut links = Rows::load(file, "TBkndCons", L_UID);
-    let proto = links.rows.iter().find(|r| r.record.len() >= 20 && !is_deleted(&r.item)).cloned().ok_or_else(|| MppError("modelo sem vínculo".into()))?;
+    let template = Rows::load(&template()?, "TBkndCons", L_UID);
+    let proto = template.rows.iter().find(|r| r.is_live()).cloned().ok_or_else(|| MppError("modelo sem vínculo".into()))?;
+    let pair = |pred: u32, succ: u32| (pred as u64) << 32 | succ as u64;
+    let mut own = kept_rows(&links, keep, |r| pair(u32_at(r, L_PREDECESSOR), u32_at(r, L_SUCCESSOR)));
+    let mut next_uid = own.values().map(|r| u32_at(&r.record, L_UID)).max().unwrap_or(0) + 1..;
     links.rows.clear();
     let pairs = p.tasks.iter().enumerate().flat_map(|(i, t)| t.preds.iter().map(move |l| (l.pred, i)));
-    for (uid, (pred, succ)) in (1..).zip(pairs) {
-        let mut row = proto.clone();
-        put_u32(&mut row.record, L_UID, uid);
-        put_u32(&mut row.record, L_PREDECESSOR, p.tasks[pred].uid as u32);
-        put_u32(&mut row.record, L_SUCCESSOR, p.tasks[succ].uid as u32);
-        put_guid(&mut row.record2, G_SELF, &new_guid());
-        put_guid(&mut row.record2, G_SECOND, &guids.tasks[pred]);
-        put_guid(&mut row.record2, G_THIRD, &guids.tasks[succ]);
+    for (pred, succ) in pairs {
+        let (pu, su) = (p.tasks[pred].uid as u32, p.tasks[succ].uid as u32);
+        let row = own.remove(&pair(pu, su)).unwrap_or_else(|| {
+            let mut row = proto.clone();
+            put_u32(&mut row.record, L_UID, next_uid.next().unwrap());
+            put_u32(&mut row.record, L_PREDECESSOR, pu);
+            put_u32(&mut row.record, L_SUCCESSOR, su);
+            put_guid(&mut row.record2, G_SELF, &new_guid());
+            put_guid(&mut row.record2, G_SECOND, &guids.tasks[pred]);
+            put_guid(&mut row.record2, G_THIRD, &guids.tasks[succ]);
+            row
+        });
         links.rows.push(row);
     }
     links.save(file)
@@ -324,13 +417,12 @@ struct CalendarUids {
     tasks: HashMap<usize, u32>,
 }
 
-/// The project calendar (the template's base calendar, with the project's working time), one
-/// more base calendar per calendar a task uses, and one calendar per resource, derived from the
-/// project calendar.
+/// A new file's calendars: the project calendar (the template's base calendar, with the
+/// project's working time), one more base calendar per calendar a task uses, and one calendar per
+/// resource, derived from the project calendar.
 fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Result<CalendarUids> {
     let mut calendars = Rows::load(file, "TBkndCal", CAL_UID);
-    let is = |uid: u32| move |r: &&Row| r.record.len() == 12 && u32_at(&r.record, CAL_UID) == uid;
-    let resource_proto = calendars.rows.iter().find(is(PROTO_RESOURCE_CALENDAR)).cloned().ok_or_else(|| MppError("modelo sem calendário de recurso".into()))?;
+    let resource_proto = calendar_row(&calendars, PROTO_RESOURCE_CALENDAR)?;
     calendars.rows.retain(|r| r.record.len() != 12 || u32_at(&r.record, CAL_UID) != PROTO_RESOURCE_CALENDAR);
     let base = calendars.rows.iter_mut().find(|r| r.record.len() == 12 && u32_at(&r.record, CAL_UID) == BASE_CALENDAR).ok_or_else(|| MppError("modelo sem calendário base".into()))?;
     let project_calendar = &p.calendars[p.calendar];
@@ -339,12 +431,7 @@ fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Resu
     let mut next_uid = PROTO_RESOURCE_CALENDAR..;
     let mut out = CalendarUids { resources: BTreeMap::new(), tasks: HashMap::new() };
     for ((r, guid), uid) in p.resources.iter().zip(&guids.resources).zip(&mut next_uid) {
-        let mut row = resource_proto.clone();
-        put_guid(&mut row.record2, G_SELF, guid);
-        put_guid(&mut row.record2, G_SECOND, guid);
-        put_u32(&mut row.record, CAL_BASE, BASE_CALENDAR);
-        put_u32(&mut row.record, CAL_RESOURCE, r.uid as u32);
-        put_u32(&mut row.record, CAL_UID, uid);
+        let mut row = resource_calendar(&resource_proto, r.uid, uid, guid);
         // A resource's own working time; without it the calendar follows the project's.
         if let Some(own) = r.calendar.map(|c| &p.calendars[c]).filter(|c| working_time(c) != working_time(project_calendar)) {
             set_working_time(&mut row, own);
@@ -360,13 +447,54 @@ fn build_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Resu
         let mut row = base_proto.clone();
         put_u32(&mut row.record, CAL_UID, uid);
         put_guid(&mut row.record2, G_SELF, &new_guid());
-        set_or_add_var(&mut row.vars, CV_NAME, utf16z(&p.calendars[c].name));
+        set_or_add_var(&mut row.vars, CV_NAME, CALENDAR_VAR_FLAGS, utf16z(&p.calendars[c].name));
         set_working_time(&mut row, &p.calendars[c]);
         calendars.rows.push(row);
         out.tasks.insert(c, uid);
     }
     calendars.save(file)?;
     Ok(out)
+}
+
+/// An existing file's calendars stay as they are; a new resource gets a calendar derived from the
+/// project calendar, and a removed resource's calendar goes with it.
+fn extend_calendars(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Result<CalendarUids> {
+    let mut calendars = Rows::load(file, "TBkndCal", CAL_UID);
+    let proto = calendar_row(&Rows::load(&template()?, "TBkndCal", CAL_UID), PROTO_RESOURCE_CALENDAR)?;
+    let resource_of = |r: &Row| (r.record.len() == 12).then(|| i32_at(&r.record, CAL_RESOURCE)).filter(|&res| res > 0);
+    let uids: HashSet<i64> = p.resources.iter().map(|r| r.uid).collect();
+    calendars.rows.retain(|r| resource_of(r).is_none_or(|res| uids.contains(&(res as i64))));
+    let mut out = CalendarUids { resources: BTreeMap::new(), tasks: HashMap::new() };
+    for r in &calendars.rows {
+        if let Some(res) = resource_of(r) {
+            out.resources.insert(res as i64, u32_at(&r.record, CAL_UID));
+        }
+    }
+    let mut next_uid = calendars.rows.iter().filter(|r| r.record.len() == 12).map(|r| u32_at(&r.record, CAL_UID)).max().unwrap_or(0) + 1..;
+    for (r, guid) in p.resources.iter().zip(&guids.resources) {
+        if let std::collections::btree_map::Entry::Vacant(slot) = out.resources.entry(r.uid) {
+            let uid = next_uid.next().unwrap();
+            calendars.rows.push(resource_calendar(&proto, r.uid, uid, guid));
+            slot.insert(uid);
+        }
+    }
+    calendars.save(file)?;
+    Ok(out)
+}
+
+fn calendar_row(calendars: &Rows, uid: u32) -> Result<Row> {
+    calendars.rows.iter().find(|r| r.record.len() == 12 && u32_at(&r.record, CAL_UID) == uid).cloned().ok_or_else(|| MppError("modelo sem calendário de recurso".into()))
+}
+
+/// A resource's calendar, derived from the project calendar.
+fn resource_calendar(proto: &Row, resource: i64, uid: u32, guid: &Guid) -> Row {
+    let mut row = proto.clone();
+    put_guid(&mut row.record2, G_SELF, guid);
+    put_guid(&mut row.record2, G_SECOND, guid);
+    put_u32(&mut row.record, CAL_BASE, BASE_CALENDAR);
+    put_u32(&mut row.record, CAL_RESOURCE, resource as u32);
+    put_u32(&mut row.record, CAL_UID, uid);
+    row
 }
 
 /// A calendar's working time as Project stores it: seven weekday blocks (Sunday first), the
@@ -419,27 +547,32 @@ fn utf16z(s: &str) -> Vec<u8> {
     s.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect()
 }
 
-fn build_resources(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &CalendarUids) -> Result<()> {
+fn build_resources(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &CalendarUids, keep: bool) -> Result<()> {
     let mut resources = Rows::load(file, "TBkndRsc", R_UID);
-    let proto = resources.prototype(PROTO_RESOURCE)?;
+    let proto = prototype(&Rows::load(&template()?, "TBkndRsc", R_UID), &resources, PROTO_RESOURCE)?;
+    let mut own = kept_rows(&resources, keep, |r| u32_at(r, R_UID) as u64);
     resources.retain(|r| u32_at(r, R_UID) == 0);
     for ((id, r), guid) in (1..).zip(&p.resources).zip(&guids.resources) {
-        let mut row = proto.clone();
-        put_guid(&mut row.record2, G_SELF, guid);
-        put_f64(&mut row.record2, G_ORDER, (id + 1) as f64);
-        put_guid(&mut row.record2, G_RESOURCE_AGAIN, guid);
-        put_u32(&mut row.record, R_UID, r.uid as u32);
+        let mut row = own.remove(&(r.uid as u64)).unwrap_or_else(|| {
+            // A new resource: what defines it; update_mpp leaves resources alone.
+            let mut row = proto.clone();
+            put_guid(&mut row.record2, G_SELF, guid);
+            put_guid(&mut row.record2, G_RESOURCE_AGAIN, guid);
+            put_u32(&mut row.record, R_UID, r.uid as u32);
+            let rate = r.rate_at(p.start);
+            put_f64(&mut row.record, R_MAX_UNITS, r.max_units * 10000.0);
+            put_f64(&mut row.record, R_STANDARD_RATE, rate.standard);
+            put_f64(&mut row.record, R_OVERTIME_RATE, rate.overtime);
+            put_f64(&mut row.record, R_COST_PER_USE, rate.per_use * 100.0);
+            put_u32(&mut row.record, R_CALENDAR, calendars.resources[&r.uid]);
+            if let Some(b) = row.item.get_mut(12) {
+                *b = if r.kind == ResourceKind::Work { *b | RESOURCE_WORK_FLAG } else { *b & !RESOURCE_WORK_FLAG };
+            }
+            set_var(&mut row.vars, RV_NAME, utf16z(&r.name));
+            row
+        });
         put_u32(&mut row.record, R_ID, id);
-        let rate = r.rate_at(p.start);
-        put_f64(&mut row.record, R_MAX_UNITS, r.max_units * 10000.0);
-        put_f64(&mut row.record, R_STANDARD_RATE, rate.standard);
-        put_f64(&mut row.record, R_OVERTIME_RATE, rate.overtime);
-        put_f64(&mut row.record, R_COST_PER_USE, rate.per_use * 100.0);
-        put_u32(&mut row.record, R_CALENDAR, calendars.resources[&r.uid]);
-        if let Some(b) = row.item.get_mut(12) {
-            *b = if r.kind == ResourceKind::Work { *b | RESOURCE_WORK_FLAG } else { *b & !RESOURCE_WORK_FLAG };
-        }
-        set_var(&mut row.vars, RV_NAME, utf16z(&r.name));
+        put_f64(&mut row.record2, G_ORDER, (id + 1) as f64);
         resources.rows.push(row);
     }
     resources.save(file)
@@ -447,23 +580,29 @@ fn build_resources(file: &mut cfb::Compound, p: &Project, guids: &Guids, calenda
 
 /// The assignments of the project, and Project's placeholder assignment for each task without
 /// resources. Work and dates are left to [`update_mpp`].
-fn build_assignments(file: &mut cfb::Compound, p: &Project, guids: &Guids) -> Result<()> {
+fn build_assignments(file: &mut cfb::Compound, p: &Project, guids: &Guids, keep: bool) -> Result<()> {
     let mut assignments = Rows::load(file, "TBkndAssn", A_UID);
-    let (real, placeholder) = (assignments.prototype(PROTO_ASSIGNMENT)?, assignments.prototype(PROTO_PLACEHOLDER)?);
+    let template = Rows::load(&template()?, "TBkndAssn", A_UID);
+    let (real, placeholder) = (prototype(&template, &assignments, PROTO_ASSIGNMENT)?, prototype(&template, &assignments, PROTO_PLACEHOLDER)?);
+    let pair = |task: u32, resource: u32| (task as u64) << 32 | resource as u64;
+    let mut own = kept_rows(&assignments, keep, |r| pair(u32_at(r, A_TASK), u32_at(r, A_RESOURCE)));
+    let mut uid = own.values().map(|r| u32_at(&r.record, A_UID)).max().unwrap_or(0) + 1..;
     assignments.rows.clear();
-    let mut uid = 1..;
     // A placeholder keeps the template's GUID for "no resource".
     let mut add = |proto: &Row, task: usize, resource: Option<usize>| {
-        let mut row = proto.clone();
-        put_u32(&mut row.record, A_UID, uid.next().unwrap());
-        put_u32(&mut row.record, A_TASK, p.tasks[task].uid as u32);
-        put_u32(&mut row.record, A_RESOURCE, resource.map_or(PLACEHOLDER_RESOURCE, |r| p.resources[r].uid as u32));
-        put_guid(&mut row.record2, G_SELF, &new_guid());
-        put_guid(&mut row.record2, G_SECOND, &guids.tasks[task]);
-        if let Some(r) = resource {
-            put_guid(&mut row.record2, G_THIRD, &guids.resources[r]);
-        }
-        row
+        let (tu, ru) = (p.tasks[task].uid as u32, resource.map_or(PLACEHOLDER_RESOURCE, |r| p.resources[r].uid as u32));
+        own.remove(&pair(tu, ru)).unwrap_or_else(|| {
+            let mut row = proto.clone();
+            put_u32(&mut row.record, A_UID, uid.next().unwrap());
+            put_u32(&mut row.record, A_TASK, tu);
+            put_u32(&mut row.record, A_RESOURCE, ru);
+            put_guid(&mut row.record2, G_SELF, &new_guid());
+            put_guid(&mut row.record2, G_SECOND, &guids.tasks[task]);
+            if let Some(r) = resource {
+                put_guid(&mut row.record2, G_THIRD, &guids.resources[r]);
+            }
+            row
+        })
     };
     for a in &p.assignments {
         let row = add(&real, a.task, Some(a.resource));
@@ -497,10 +636,10 @@ fn uid_list(uids: &[u32]) -> Vec<u8> {
     std::iter::once(uids.len() as u32).chain(uids.iter().copied().take(KEPT)).flat_map(u32::to_le_bytes).collect()
 }
 
-fn set_or_add_var(vars: &mut Vec<(u16, u16, Vec<u8>)>, ty: u16, value: Vec<u8>) {
+fn set_or_add_var(vars: &mut Vec<(u16, u16, Vec<u8>)>, ty: u16, flags: u16, value: Vec<u8>) {
     match vars.iter_mut().find(|v| v.0 == ty) {
         Some(v) => v.2 = value,
-        None => vars.push((ty, CALENDAR_VAR_FLAGS, value)),
+        None => vars.push((ty, flags, value)),
     }
 }
 
@@ -513,7 +652,7 @@ fn set_var(vars: &mut [(u16, u16, Vec<u8>)], ty: u16, value: Vec<u8>) {
 /// Gives a calendar record its own working time; its item says so (byte 2 = 2 and bit 6 of byte 8),
 /// or Project ignores the stored times and uses the defaults.
 fn set_working_time(row: &mut Row, c: &Calendar) {
-    set_or_add_var(&mut row.vars, CV_WORKING_TIME, calendar_blob(c));
+    set_or_add_var(&mut row.vars, CV_WORKING_TIME, CALENDAR_VAR_FLAGS, calendar_blob(c));
     if let Some(b) = row.item.get_mut(2) {
         *b = 2;
     }
