@@ -131,14 +131,14 @@ pub fn edit_calendars(p: &mut Project) {
     let day_off = pjsched::calendar::Exception { from: holiday, to: holiday, shifts: vec![] };
     let project = p.calendar;
     if p.resources.is_empty() {
-        p.calendars[project].exceptions.push(day_off.clone());
+        insert_by_date(&mut p.calendars[project].exceptions, day_off.clone());
         p.calendars[project].weekdays[5] = vec![(9 * 60, 12 * 60)];
     }
     let mut used: Vec<usize> = p.tasks.iter().filter_map(|t| t.calendar).filter(|&c| c != project).collect();
     used.sort_unstable();
     used.dedup();
     for c in used {
-        p.calendars[c].exceptions.push(day_off.clone());
+        insert_by_date(&mut p.calendars[c].exceptions, day_off.clone());
     }
 }
 
@@ -149,4 +149,10 @@ pub fn add_overtime(p: &mut Project) {
     if let Some(k) = p.assignments.iter().position(work) {
         p.assignments[k].overtime_work = 60;
     }
+}
+
+/// Adds an exception where Project keeps it: in date order.
+fn insert_by_date(exceptions: &mut Vec<pjsched::calendar::Exception>, e: pjsched::calendar::Exception) {
+    let at = exceptions.iter().position(|x| x.from > e.from).unwrap_or(exceptions.len());
+    exceptions.insert(at, e);
 }

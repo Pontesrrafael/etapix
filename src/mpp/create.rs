@@ -491,7 +491,9 @@ pub(super) fn calendar_blob(c: &Calendar, base: Option<&Calendar>) -> Vec<u8> {
     let standard = Calendar::standard();
     let defaults = base.unwrap_or(&standard);
     let mut out: Vec<u8> = c.weekdays.iter().zip(&defaults.weekdays).flat_map(|(d, s)| if d == s { default_block() } else { shift_block(d) }).collect();
-    let own: Vec<_> = c.exceptions.iter().filter(|e| !base.is_some_and(|b| b.exceptions.contains(e))).collect();
+    // Kept in date order, as Project keeps them.
+    let mut own: Vec<_> = c.exceptions.iter().filter(|e| !base.is_some_and(|b| b.exceptions.contains(e))).collect();
+    own.sort_by_key(|e| e.from);
     out.extend_from_slice(&(own.len() as u32).to_le_bytes());
     for e in own {
         let mut entry = [0u8; EXCEPTION_LEN];
