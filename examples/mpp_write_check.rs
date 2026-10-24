@@ -31,6 +31,7 @@ fn main() {
         Some((cmd, rest)) if cmd == "prepare" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Edit),
         Some((cmd, rest)) if cmd == "prepare-new" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::New),
         Some((cmd, rest)) if cmd == "prepare-structure" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Structure),
+        Some((cmd, rest)) if cmd == "prepare-progress" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Progress),
         Some((cmd, rest)) if cmd == "verify" && rest.len() == 1 => verify(Path::new(&rest[0])),
         _ => eprintln!("uso: mpp_write_check prepare SAIDA arquivo.mpp... | verify SAIDA"),
     }
@@ -45,6 +46,8 @@ enum Mode {
     New,
     /// Tasks, links and assignments added and removed, saved into the file.
     Structure,
+    /// Progress recorded on tasks, saved into the file.
+    Progress,
 }
 
 fn prepare(out: &Path, files: &[String], mode: Mode) {
@@ -59,6 +62,7 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
         match mode {
             Mode::Edit => edits::edit(&mut project),
             Mode::Structure => edits::restructure(&mut project),
+            Mode::Progress => edits::track(&mut project),
             Mode::New => {}
         }
         let cals = Calendars::new(&project).unwrap();
@@ -69,7 +73,7 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
         let saved = match mode {
             Mode::Edit => update_mpp(&original, &xml),
             Mode::New => create_mpp(&xml),
-            Mode::Structure => save_mpp(&original, &xml),
+            Mode::Structure | Mode::Progress => save_mpp(&original, &xml),
         };
         match saved {
             Ok(bytes) => {
@@ -81,11 +85,13 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
     }
 }
 
-/// What Project and Etapix must agree on. A summary's duration is left out: Project rolls it up
-/// from its subtasks when it opens the file, while Etapix keeps the stored value.
+/// What Project and Etapix must agree on. A summary's duration and progress are left out:
+/// Project rolls them up from its subtasks when it opens the file, while Etapix keeps the stored
+/// values.
 fn comparable(mut p: Project) -> Vec<String> {
     for t in p.tasks.iter_mut().filter(|t| t.summary) {
         t.duration = 0;
+        t.progress = Default::default();
     }
     let mut text = describe::describe(&p);
     text.push(format!("schedule {:?}", describe::schedule(&p)));

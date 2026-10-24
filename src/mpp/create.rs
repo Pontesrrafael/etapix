@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use super::update::{set_prop, working_time, put_date, put_f64, put_u16, put_u32, set_flag, F_SUMMARY, PLACEHOLDER_RESOURCE};
+use super::update::{ITEM_VAR_COUNT, set_prop, working_time, put_date, put_f64, put_u16, put_u32, set_flag, F_SUMMARY, PLACEHOLDER_RESOURCE};
 use super::*;
 use crate::calendar::Calendar;
 use crate::model::{Project, ResourceKind};
@@ -116,9 +116,6 @@ fn check_supported(p: &Project) -> Result<()> {
     if p.assignments.iter().any(|a| a.overtime_work > 0) {
         return unsupported("horas extras");
     }
-    if p.tasks.iter().any(|t| t.progress != Default::default()) {
-        return unsupported("andamento de tarefas");
-    }
     if p.tasks.iter().any(|t| t.baseline.is_some()) {
         return unsupported("linha de base");
     }
@@ -213,7 +210,12 @@ impl Rows {
         self.rows.retain(|r| r.is_index() || (r.is_live() && keep(&r.record)));
     }
 
-    fn save(self, file: &mut cfb::Compound) -> Result<()> {
+    fn save(mut self, file: &mut cfb::Compound) -> Result<()> {
+        // Each live record's item holds how many variable values it has.
+        for r in self.rows.iter_mut().filter(|r| !r.is_index()) {
+            let n = r.vars.len() as u16;
+            put_u16(&mut r.item, ITEM_VAR_COUNT, n);
+        }
         let (meta, data) = Self::lay_out(&self.meta_header, self.rows.iter().map(|r| (&r.item, &r.record)));
         let (meta2, data2) = Self::lay_out(&self.meta2_header, self.rows.iter().map(|r| (&r.item2, &r.record2)));
         let mut var_meta = self.var_header.clone();
@@ -649,12 +651,9 @@ fn set_var(vars: &mut [(u16, u16, Vec<u8>)], ty: u16, value: Vec<u8>) {
     }
 }
 
-/// Gives a calendar record its own working time; its item says so (byte 2 = 2 and bit 6 of byte 8),
-/// or Project ignores the stored times and uses the defaults.
+/// Gives a calendar record its own working time; its item says so (bit 6 of byte 8), or Project
+/// ignores the stored times and uses the defaults.
 fn set_working_time(row: &mut Row, c: &Calendar) {
     set_or_add_var(&mut row.vars, CV_WORKING_TIME, CALENDAR_VAR_FLAGS, calendar_blob(c));
-    if let Some(b) = row.item.get_mut(2) {
-        *b = 2;
-    }
     set_flag(&mut row.item, (8, 6), true);
 }

@@ -21,14 +21,37 @@ use crate::mspdi_write::{constraint, link_code};
 // Keys of the per-table counters in the project's `Props`, plus the table's number.
 const ROW_COUNT: u32 = 0x0100_0000;
 const VAR_SIZE: u32 = 0x0001_0000;
+/// Where a FixedMeta item holds the number of variable values of its record.
+pub(super) const ITEM_VAR_COUNT: usize = 2;
+
+/// Where each table's records hold the UID their variable values are filed under.
+fn uid_offset(table: &str) -> Option<usize> {
+    match table {
+        "TBkndTask" => Some(T_UID),
+        "TBkndRsc" => Some(R_UID),
+        "TBkndAssn" => Some(A_UID),
+        "TBkndCal" => Some(8),
+        _ => None,
+    }
+}
+
 /// Bytes Project writes for an empty ("NA") date.
 const NA: [u8; 4] = [0xFF; 4];
 /// Remaining duration (tenths of a minute): Project takes the duration as done + remaining.
 const T_REMAINING_DURATION: usize = 88;
+/// Actual duration (tenths of a minute).
+const T_ACTUAL_DURATION: usize = 80;
+/// Where the done work stops (the resume date is `T_RESUME`), and the actual start of a task in
+/// progress.
+const T_STOP: usize = 136;
+const T_STARTED_AT: usize = 174;
+/// Progress flags in the FixedMeta item: some work done; not in progress (clear while started
+/// and unfinished).
+const F_SOME_WORK_DONE: (usize, u8) = (44, 3);
+const F_NOT_IN_PROGRESS: (usize, u8) = (18, 5);
 // Flags in a task's FixedMeta item: (byte, bit).
 pub(super) const F_SUMMARY: (usize, u8) = (12, 3);
-/// Manually scheduled: in the FixedMeta item and again in the Fixed2Meta item.
-const F_MANUAL: (usize, u8) = (2, 0);
+/// Manually scheduled, in the Fixed2Meta item.
 const F2_MANUAL: (usize, u8) = (8, 7);
 const F_MILESTONE: (usize, u8) = (10, 1);
 const F_EFFORT_DRIVEN: (usize, u8) = (13, 3);
@@ -45,15 +68,28 @@ const A_REGULAR_WORK: usize = 36;
 const A_REMAINING_WORK: usize = 44;
 const A_RESUME: usize = 60;
 const A_STOP: usize = 104;
-/// Work contour: how the work spreads over time. Project rebuilds the task from it.
+/// Work contours: how the remaining work, and the done work, spread over time. Project rebuilds
+/// the task from them.
 const AV_CONTOUR: u16 = 0x31;
+const AV_DONE_CONTOUR: u16 = 0x32;
+const ASSIGNMENT_VAR_FLAGS: u16 = 0x0F40;
+/// The done-work contour: count, segment length and the offset of a closing copy in the header,
+/// one segment from 8, the copy (work, rate, span) at 36.
+const DONE_CONTOUR_LEN: usize = 56;
+const DONE_SEGMENT_LEN: u16 = 0x18;
+const DONE_TAIL: usize = 36;
+const A_ACTUAL_WORK: usize = 28;
+/// An assignment with work done carries both flags in its FixedMeta item.
+const A_WORK_DONE_FLAGS: [(usize, u8); 2] = [(10, 3), (14, 2)];
+const C_FIRST: usize = 8;
 // A uniform contour of one segment (72 bytes): rate (units × 160000) at 8, work (thousandths of a
 // minute) at 16, span (working minutes × 80) at 24, segment count at 32.
-const C_RATE: usize = 8;
-const C_WORK: usize = 16;
-const C_SPAN: usize = 24;
 const C_SEGMENTS: usize = 32;
 const UNIFORM_CONTOUR_LEN: usize = 72;
+/// With work done, Project adds a second closing copy and 8 zero bytes.
+const PROGRESS_CONTOUR_LEN: usize = 108;
+/// The closing copy (work, rate, span) of a remaining-work contour.
+const C_TAIL: usize = 44;
 /// The resource of the assignment Project gives a task without resources.
 pub(super) const PLACEHOLDER_RESOURCE: u32 = -65535i32 as u32;
 // MSPDI duration formats: 7 = days, 8 = elapsed days, 5 = hours.
@@ -73,7 +109,8 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     let mut tasks = Store::load(&file, "TBkndTask");
     for (old, new) in before.tasks.iter().zip(&after.tasks) {
         let at = tasks.find(T_UID, new.uid as u32).ok_or_else(|| MppError(format!("tarefa {} não encontrada no .mpp", new.uid)))?;
-        write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid));
+        let progress = dates.assignments.iter().find(|a| a.task == new.uid as u32).map(|a| (a.stop, a.resume));
+        write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid), progress.unwrap_or_default());
     }
     tasks.save(&mut file)?;
 
@@ -96,7 +133,7 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     let pairs: HashMap<i64, (&Task, &Task)> = before.tasks.iter().zip(&after.tasks).map(|(o, n)| (n.uid, (o, n))).collect();
     let keeps = |uid: i64| pairs.get(&uid).is_some_and(|&(o, n)| keeps_file_dates(o, n));
     for a in &dates.assignments {
-        // Etapix adds a placeholder assignment (no resource) to tracked tasks; the file has its own.
+        // Etapix's placeholder assignments (no resource) of tracked tasks go to the file's own, below.
         if (a.resource as i32) < 0 || keeps(a.task as i64) {
             continue;
         }
@@ -108,8 +145,9 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     for (old, t) in before.tasks.iter().zip(&after.tasks).filter(|(_, t)| !t.summary) {
         let Some(&(start, finish)) = dates.tasks.get(&t.uid).filter(|_| !keeps_file_dates(old, t)) else { continue };
         if let Some(at) = assignments.find_assignment(t.uid as u32, PLACEHOLDER_RESOURCE) {
-            let work = t.duration as f64;
-            assignments.write_assignment(at, &AssignmentDates { task: t.uid as u32, resource: PLACEHOLDER_RESOURCE, units: 1.0, work, start, finish })?;
+            let tracked = dates.assignments.iter().find(|a| a.task == t.uid as u32 && a.resource == PLACEHOLDER_RESOURCE);
+            let untracked = AssignmentDates::unstarted(t.uid as u32, PLACEHOLDER_RESOURCE, 1.0, t.duration as f64, start, finish);
+            assignments.write_assignment(at, tracked.unwrap_or(&untracked))?;
         }
     }
     assignments.save(&mut file)?;
@@ -190,10 +228,6 @@ fn same_structure(before: &Project, after: &Project) -> Result<()> {
     if options(before) != options(after) {
         return unsupported("opções do projeto alteradas");
     }
-    let tracked = |a: &Task, b: &Task| a.progress != b.progress || (b.progress.actual_start.is_some() && a.duration != b.duration);
-    if before.tasks.iter().zip(&after.tasks).any(|(a, b)| tracked(a, b)) {
-        return unsupported("andamento de tarefas, ou duração de tarefa iniciada,");
-    }
     if before.tasks.iter().zip(&after.tasks).any(|(a, b)| a.baseline != b.baseline) {
         return unsupported("linha de base alterada");
     }
@@ -208,7 +242,7 @@ pub(super) fn working_time(c: &Calendar) -> String {
 
 /// Writes task `new` over the record that holds `old`, field by field where they differ, and the
 /// dates Etapix scheduled for it.
-fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Option<&(NaiveDateTime, NaiveDateTime)>) {
+fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Option<&(NaiveDateTime, NaiveDateTime)>, (stop, resume): (Option<NaiveDateTime>, Option<NaiveDateTime>)) {
     if old.name != new.name {
         tasks.set_text(new.uid as u32, TV_NAME, &new.name);
     }
@@ -247,6 +281,7 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
         put_u16(r, T_PERCENT, q.percent_complete as u16);
     }
     if (old.duration, p.percent_complete) != (new.duration, q.percent_complete) {
+        put_u32(r, T_ACTUAL_DURATION, (new.duration * q.percent_complete.min(100) as i64 / 100 * 10) as u32);
         let remaining = new.duration * (100 - q.percent_complete.min(100) as i64) / 100;
         put_u32(r, T_REMAINING_DURATION, (remaining * 10) as u32);
     }
@@ -256,8 +291,8 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
     if p.actual_finish != q.actual_finish {
         put_date(r, T_ACTUAL_FINISH, q.actual_finish);
     }
-    if p.resume != q.resume {
-        put_date(r, T_RESUME, q.resume);
+    if p != q {
+        write_progress(r, q, stop, resume);
     }
     if let Some(&(start, finish)) = dates.filter(|_| !keeps_file_dates(old, new)) {
         put_date(r, T_START, Some(start));
@@ -273,11 +308,27 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
     let manual = new.manual.is_some();
     set_flag(tasks.item2(at), F2_MANUAL, manual);
     let item = tasks.item(at);
-    set_flag(item, F_MANUAL, manual);
+    let q = &new.progress;
+    set_flag(item, F_SOME_WORK_DONE, q.percent_complete > 0);
+    set_flag(item, F_NOT_IN_PROGRESS, q.actual_start.is_none() || q.actual_finish.is_some());
     set_flag(item, F_MILESTONE, new.duration == 0 && !new.summary);
     set_flag(item, F_EFFORT_DRIVEN, new.effort_driven);
     set_flag(item, F_LEVELING_CAN_SPLIT, new.leveling_can_split);
     set_flag(item, F_IGNORE_RESOURCE_CALENDAR, new.ignore_resource_calendar);
+}
+
+/// Where a task's done work stops and its remaining work resumes, as Project keeps them: at the
+/// actual start when nothing is done yet, at the actual finish when all is.
+fn write_progress(r: &mut [u8], q: &crate::model::Progress, stop: Option<NaiveDateTime>, resume: Option<NaiveDateTime>) {
+    let (stop, resume, started) = match (q.actual_start, q.actual_finish) {
+        (None, _) => (None, None, None),
+        (Some(_), Some(finish)) => (Some(finish), Some(finish), None),
+        (Some(start), None) if q.percent_complete == 0 => (Some(start), Some(start), Some(start)),
+        (Some(start), None) => (stop.or(Some(start)), resume.or(stop).or(Some(start)), Some(start)),
+    };
+    put_date(r, T_STOP, stop);
+    put_date(r, T_RESUME, resume);
+    put_date(r, T_STARTED_AT, started);
 }
 
 /// Tasks whose dates, and assignments, stay as the file has them: a manual task's dates are what
@@ -285,7 +336,7 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
 /// from its progress, which Etapix does not write yet.
 fn keeps_file_dates(old: &Task, new: &Task) -> bool {
     let manual = new.manual.is_some() && old.manual == new.manual;
-    let started = new.progress.actual_start.is_some();
+    let started = new.progress.actual_start.is_some() && old.progress == new.progress;
     (manual || started) && old.duration == new.duration
 }
 
@@ -311,6 +362,17 @@ struct AssignmentDates {
     work: f64,
     start: NaiveDateTime,
     finish: NaiveDateTime,
+    /// Work done (minutes), and where the done work stops and the remaining work resumes.
+    actual: f64,
+    stop: Option<NaiveDateTime>,
+    resume: Option<NaiveDateTime>,
+}
+
+impl AssignmentDates {
+    /// An assignment that has not started: all its work remains, from its start.
+    fn unstarted(task: u32, resource: u32, units: f64, work: f64, start: NaiveDateTime, finish: NaiveDateTime) -> Self {
+        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None }
+    }
 }
 
 impl Dates {
@@ -326,6 +388,11 @@ impl Dates {
                     out.tasks.insert(uid, (s, f));
                 }
             } else if n.has_tag_name("Assignment") {
+                // Timephased work: type 2 is done, type 1 remaining.
+                let periods = |ty: &'static str, at: &'static str| n.children().filter(move |c| c.has_tag_name("TimephasedData") && child(*c, "Type") == ty).filter_map(move |c| parse_datetime(&child(c, at)).ok());
+                let stop = periods("2", "Finish").max();
+                let resume = periods("1", "Start").min();
+                let actual = child(n, "ActualWork");
                 out.assignments.push(AssignmentDates {
                     task: child(n, "TaskUID").parse::<i64>().unwrap_or(-1) as u32,
                     resource: child(n, "ResourceUID").parse::<i64>().unwrap_or(-1) as u32,
@@ -333,6 +400,9 @@ impl Dates {
                     work: parse_duration(&child(n, "Work")).map_err(|e| MppError(e.0))? as f64,
                     start: date(child(n, "Start"))?,
                     finish: date(child(n, "Finish"))?,
+                    actual: if actual.is_empty() { 0.0 } else { parse_duration(&actual).map_err(|e| MppError(e.0))? as f64 },
+                    stop,
+                    resume,
                 });
             }
         }
@@ -365,7 +435,8 @@ impl Store {
         Store { name: name.into(), meta, data, meta2, data2, var_meta: get("VarMeta"), var_data: get("Var2Data"), rows, items2 }
     }
 
-    fn save(self, file: &mut cfb::Compound) -> Result<()> {
+    fn save(mut self, file: &mut cfb::Compound) -> Result<()> {
+        self.count_vars();
         let streams = [("FixedMeta", self.meta), ("FixedData", self.data), ("Fixed2Meta", self.meta2), ("Fixed2Data", self.data2), ("VarMeta", self.var_meta), ("Var2Data", self.var_data)];
         for (s, bytes) in streams {
             let path = format!("/   114/{}/{s}", self.name);
@@ -374,6 +445,23 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Each live record's item holds, at 2, how many variable values the record has.
+    fn count_vars(&mut self) {
+        let Some(uid_at) = uid_offset(&self.name) else { return };
+        let mut counts: HashMap<u32, u16> = HashMap::new();
+        for k in 0..u32_at(&self.var_meta, 8) as usize {
+            *counts.entry(u32_at(&self.var_meta, 24 + 12 * k)).or_default() += 1;
+        }
+        for (item, rec, _) in &self.rows {
+            let record = &self.data[rec.clone()];
+            if record.len() < uid_at + 4 || record.len() == 16 || is_deleted(&self.meta[item.clone()]) {
+                continue;
+            }
+            let n = counts.get(&u32_at(record, uid_at)).copied().unwrap_or(0);
+            put_u16(&mut self.meta[item.clone()], ITEM_VAR_COUNT, n);
+        }
     }
 
     /// The first live record that `matches` (index entries and deleted records are skipped).
@@ -393,33 +481,56 @@ impl Store {
         self.find_live(|r| r.len() > A_FINISH && u32_at(r, A_TASK) == task && u32_at(r, A_RESOURCE) == resource)
     }
 
-    /// Work and dates of an assignment that has not started: all its work is regular and
-    /// remaining, the stop and resume dates sit at its start, and its contour spreads the work
-    /// evenly.
+    /// Work and dates of an assignment: all its work is regular; the done part stops at `stop`
+    /// and the rest resumes at `resume` (both at the start before any work is done). Its
+    /// contours spread the remaining and the done work evenly.
     fn write_assignment(&mut self, row: usize, a: &AssignmentDates) -> Result<()> {
         let r = self.record(row);
         let uid = u32_at(r, A_UID);
-        let changed = f64_at(r, A_WORK) != a.work * 1000.0 || f64_at(r, A_UNITS) != a.units * 10000.0;
+        let remaining = a.work - a.actual;
+        let changed = f64_at(r, A_WORK) != a.work * 1000.0 || f64_at(r, A_UNITS) != a.units * 10000.0 || f64_at(r, A_ACTUAL_WORK) != a.actual * 1000.0;
         put_f64(r, A_UNITS, a.units * 10000.0);
-        for o in [A_WORK, A_REGULAR_WORK, A_REMAINING_WORK] {
-            put_f64(r, o, a.work * 1000.0);
-        }
+        put_f64(r, A_WORK, a.work * 1000.0);
+        put_f64(r, A_REGULAR_WORK, a.work * 1000.0);
+        put_f64(r, A_ACTUAL_WORK, a.actual * 1000.0);
+        put_f64(r, A_REMAINING_WORK, remaining * 1000.0);
         put_date(r, A_START, Some(a.start));
         put_date(r, A_FINISH, Some(a.finish));
-        put_date(r, A_RESUME, Some(a.start));
-        put_date(r, A_STOP, Some(a.start));
-        let Some(mut contour) = self.var(uid, AV_CONTOUR).map(<[u8]>::to_vec) else { return Ok(()) };
+        let stop = a.stop.unwrap_or(a.start);
+        put_date(r, A_STOP, Some(stop));
+        put_date(r, A_RESUME, Some(a.resume.unwrap_or(stop)));
+        let item = self.item(row);
+        for flag in A_WORK_DONE_FLAGS {
+            set_flag(item, flag, a.actual > 0.0);
+        }
         if !changed {
             return Ok(());
         }
-        if contour.len() != UNIFORM_CONTOUR_LEN || u32_at(&contour, C_SEGMENTS) != 1 {
+        let Some(contour) = self.var(uid, AV_CONTOUR) else { return Ok(()) };
+        if !matches!(contour.len(), UNIFORM_CONTOUR_LEN | PROGRESS_CONTOUR_LEN) || u32_at(contour, C_SEGMENTS) != 1 {
             return err("trabalho de atribuição com distribuição irregular (nivelada ou editada no Project): essa alteração ainda não pode ser gravada direto no .mpp");
         }
-        let span = if a.units > 0.0 { a.work / a.units } else { 0.0 };
-        put_f64(&mut contour, C_RATE, a.units * 160_000.0);
-        put_f64(&mut contour, C_WORK, a.work * 1000.0);
-        put_u32(&mut contour, C_SPAN, (span * 80.0).round() as u32);
+        let mut contour = contour[..UNIFORM_CONTOUR_LEN].to_vec();
+        let rate = a.units * 160_000.0;
+        uniform_segment(&mut contour, C_FIRST, rate, remaining, a.units);
+        let tail = closing_copy(rate, remaining, a.units);
+        contour[C_TAIL..].copy_from_slice(&tail);
+        if a.actual > 0.0 {
+            contour.extend_from_slice(&tail);
+            contour.extend_from_slice(&[0; 8]);
+        }
         self.set_var(uid, AV_CONTOUR, contour);
+        if a.actual > 0.0 {
+            let mut done = vec![0u8; DONE_CONTOUR_LEN];
+            put_u16(&mut done, 0, 1);
+            put_u16(&mut done, 2, DONE_SEGMENT_LEN);
+            put_u32(&mut done, 4, DONE_TAIL as u32);
+            uniform_segment(&mut done, C_FIRST, a.units * 10_000.0, a.actual, a.units);
+            put_f64(&mut done, DONE_TAIL, a.actual * 1000.0);
+            put_f64(&mut done, DONE_TAIL + 8, a.units * 10_000.0);
+            put_u32(&mut done, DONE_TAIL + 16, span_of(a.actual, a.units));
+            self.set_or_add_var(uid, AV_DONE_CONTOUR, ASSIGNMENT_VAR_FLAGS, done);
+        }
         Ok(())
     }
 
@@ -448,6 +559,19 @@ impl Store {
     fn var(&self, uid: u32, ty: u16) -> Option<&[u8]> {
         let at = u32_at(&self.var_meta, self.var_entry(uid, ty)? + 4) as usize;
         self.var_data.get(at + 4..at + 4 + u32_at(&self.var_data, at) as usize)
+    }
+
+    /// Sets a variable value, adding its index entry when the record has none yet.
+    fn set_or_add_var(&mut self, uid: u32, ty: u16, flags: u16, value: Vec<u8>) {
+        if self.var_entry(uid, ty).is_none() {
+            let count = u32_at(&self.var_meta, 8);
+            self.var_meta.extend_from_slice(&uid.to_le_bytes());
+            self.var_meta.extend_from_slice(&0u32.to_le_bytes());
+            self.var_meta.extend_from_slice(&ty.to_le_bytes());
+            self.var_meta.extend_from_slice(&flags.to_le_bytes());
+            put_u32(&mut self.var_meta, 8, count + 1);
+        }
+        self.set_var(uid, ty, value);
     }
 
     /// Replaces a text value (UTF-16, zero-terminated).
@@ -484,6 +608,28 @@ pub(super) fn put_f64(b: &mut [u8], o: usize, v: f64) {
     if let Some(s) = b.get_mut(o..o + 8) {
         s.copy_from_slice(&v.to_le_bytes());
     }
+}
+
+/// One contour segment at `at`: the rate, the work (thousandths of a minute) and its span in
+/// working minutes × 80.
+fn uniform_segment(b: &mut [u8], at: usize, rate: f64, work: f64, units: f64) {
+    put_f64(b, at, rate);
+    put_f64(b, at + 8, work * 1000.0);
+    put_u32(b, at + 16, span_of(work, units));
+}
+
+/// A contour's closing copy: work, rate, then the span 24 bytes in.
+fn closing_copy(rate: f64, work: f64, units: f64) -> [u8; 28] {
+    let mut b = [0u8; 28];
+    put_f64(&mut b, 0, work * 1000.0);
+    put_f64(&mut b, 8, rate);
+    put_u32(&mut b, 24, span_of(work, units));
+    b
+}
+
+fn span_of(work: f64, units: f64) -> u32 {
+    let span = if units > 0.0 { work / units } else { 0.0 };
+    (span * 80.0).round() as u32
 }
 
 /// The inverse of [`date_at`]: tenths of a minute, then days since 1983-12-31; NA for `None`.

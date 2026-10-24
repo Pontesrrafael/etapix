@@ -52,3 +52,29 @@ pub fn restructure(p: &mut Project) {
         p.tasks[1].preds.push(Link { pred: 0, kind: LinkType::FinishToStart, lag: 0, lag_elapsed: false });
     }
 }
+
+/// Progress: some tasks half done, others finished, each started where it was scheduled.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn track(p: &mut Project) {
+    let Ok(cals) = pjsched::calendar::Calendars::new(p) else { return };
+    let Ok(schedule) = pjsched::cpm::schedule(p, &cals, None) else { return };
+    for (k, (t, s)) in p.tasks.iter_mut().zip(&schedule).enumerate() {
+        if t.summary || t.manual.is_some() || t.duration == 0 || t.progress.actual_start.is_some() {
+            continue;
+        }
+        let (start, finish) = (cals.clock.dt(s.start), cals.clock.dt(s.finish));
+        let progress = &mut t.progress;
+        match k % 3 {
+            0 => {
+                progress.percent_complete = 50;
+                progress.actual_start = Some(start);
+            }
+            1 => {
+                progress.percent_complete = 100;
+                progress.actual_start = Some(start);
+                progress.actual_finish = Some(finish);
+            }
+            _ => {}
+        }
+    }
+}

@@ -21,7 +21,7 @@ use chrono::NaiveDateTime;
 use crate::calendar::{At, Calendar, Calendars, Shift};
 use crate::cpm::TaskSchedule;
 use crate::mspdi::NS;
-use crate::model::{Constraint, LinkType, Project, ResourceKind, TaskType, Wm};
+use crate::model::{Constraint, LinkType, Project, ResourceKind, Task, TaskType, Wm};
 
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
@@ -138,6 +138,28 @@ fn timephased(out: &mut String, cals: &Calendars, kind: u8, uid: usize, (a, b): 
 fn stop(cals: &Calendars, i: usize, dur: Wm, s: &TaskSchedule, pct: u32) -> Option<At> {
     let done = dur * pct as Wm / 100;
     (done > 0).then(|| cals.task(i).finish_after(s.start, done))
+}
+
+/// Stop (where the done work ends) and Resume (where the rest restarts) of a started task, the way
+/// Project writes them: at the actual start before any work is done, at the finish once all is.
+/// A split from rescheduled progress keeps its own dates, with ResumeValid, which makes Project
+/// restart the remaining work at Resume.
+fn stop_and_resume(cals: &Calendars, i: usize, t: &Task, s: &TaskSchedule) -> String {
+    let at = |x| dt(cals.clock.dt(x));
+    let p = &t.progress;
+    if s.segments.len() > 1 {
+        let resume = p.resume.map_or_else(|| at(s.segments[1].0), dt);
+        return format!("<Stop>{}</Stop><Resume>{resume}</Resume><ResumeValid>1</ResumeValid>", at(s.segments[0].1));
+    }
+    let (stop, resume) = match (p.actual_start, p.actual_finish) {
+        (None, _) => return p.resume.map_or(String::new(), |d| format!("<Resume>{}</Resume>", dt(d))),
+        (Some(_), Some(_)) => (s.finish, s.finish),
+        (Some(_), None) => match stop(cals, i, t.duration, s, p.percent_complete) {
+            Some(stop) => (stop, cals.task(i).start_at(cals.task(i).w(stop))),
+            None => (s.start, s.start),
+        },
+    };
+    format!("<Stop>{}</Stop><Resume>{}</Resume>", at(stop), at(resume))
 }
 
 /// Task-level timephased progress: per day of done work, the percent of the duration done.
@@ -261,7 +283,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             "<Task><UID>{}</UID><ID>{}</ID><Name>{}</Name><Manual>{}</Manual><Type>{task_type}</Type>\
              <OutlineLevel>{level}</OutlineLevel><Priority>{}</Priority>\
              <Start>{}</Start><Finish>{}</Finish><Duration>{}</Duration>{}<DurationFormat>{}</DurationFormat>\
-             {}{}<EffortDriven>{}</EffortDriven><Summary>{}</Summary>\
+             {}<EffortDriven>{}</EffortDriven><Summary>{}</Summary>\
              <FixedCost>{}</FixedCost><FixedCostAccrual>{}</FixedCostAccrual><PercentComplete>{}</PercentComplete>{}{}{}\
              <ConstraintType>{ctype}</ConstraintType><CalendarUID>{}</CalendarUID>{}{}\
              <LevelingCanSplit>{}</LevelingCanSplit><LevelingDelay>{}</LevelingDelay><LevelingDelayFormat>8</LevelingDelayFormat><IgnoreResourceCalendar>{}</IgnoreResourceCalendar>",
@@ -280,13 +302,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
                 duration(t.duration)
             )),
             if t.elapsed { 8 } else { 7 },
-            // A split from rescheduled progress needs Stop next to Resume.
-            if s.segments.len() > 1 { format!("<Stop>{}</Stop>", at(s.segments[0].1)) } else { String::new() },
-            // ResumeValid makes Project restart remaining work at Resume: only for a real split.
-            p.resume.map_or(String::new(), |d| {
-                let valid = if s.segments.len() > 1 { "<ResumeValid>1</ResumeValid>" } else { "" };
-                format!("<Resume>{}</Resume>{valid}", dt(d))
-            }),
+            stop_and_resume(cals, i, t, s),
             u8::from(t.effort_driven),
             u8::from(t.summary),
             (t.fixed_cost * 100.0).round(),
