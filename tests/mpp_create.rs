@@ -56,10 +56,9 @@ fn new_files_read_back_as_saved() {
 fn unsupported_projects_are_refused_with_a_reason() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus/b1/S8-unidades-50.mpp");
     let mut project = read_project(&mpp_to_mspdi(&std::fs::read(path).unwrap()).unwrap()).unwrap();
-    let later = pjsched::model::Rate { from: project.start + chrono::Duration::days(30), ..project.resources[0].rates[0].clone() };
-    project.resources[0].rates.push(later);
+    project.assignments[0].overtime_work = 60;
     let cals = Calendars::new(&project).unwrap();
     let schedule = cpm::schedule(&project, &cals, None).unwrap();
     let err = create_mpp(&write_project(&project, &cals, &schedule, "teste")).unwrap_err();
-    assert!(err.0.contains("taxas") && err.0.contains("Microsoft Project"), "{}", err.0);
+    assert!(err.0.contains("horas extras") && err.0.contains("Microsoft Project"), "{}", err.0);
 }

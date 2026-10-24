@@ -106,3 +106,18 @@ pub fn add_cost(p: &mut Project) {
     a.cost = 500.0;
     p.assignments.push(a);
 }
+
+/// Resources edited: renamed, with more units, and with their rates raised a month in.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn edit_resources(p: &mut Project) {
+    let later = p.start + chrono::Duration::days(30);
+    for r in &mut p.resources {
+        r.name.push_str(" (revisado)");
+        if r.kind == pjsched::model::ResourceKind::Work {
+            r.max_units += 0.5;
+        }
+        if let Some(last) = r.rates.last().cloned().filter(|l| l.from < later) {
+            r.rates.push(pjsched::model::Rate { from: later, standard: last.standard + 10.0, overtime: last.overtime + 15.0, per_use: last.per_use + 1.0 });
+        }
+    }
+}

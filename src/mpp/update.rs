@@ -14,7 +14,7 @@ use roxmltree::Document;
 
 use super::*;
 use crate::calendar::Calendar;
-use crate::model::{Project, Task};
+use crate::model::{Project, Resource, Task};
 use crate::mspdi::{parse_datetime, parse_duration, read_project};
 use crate::mspdi_write::{constraint, link_code};
 
@@ -75,6 +75,17 @@ const AV_DONE_CONTOUR: u16 = 0x32;
 const ASSIGNMENT_VAR_FLAGS: u16 = 0x0F40;
 /// Entry flags of a task's variable data.
 const TASK_VAR_FLAGS: u16 = 0x0B40;
+/// Entry flags of a resource's variable data.
+pub(super) const RESOURCE_VAR_FLAGS: u16 = 0x0C40;
+/// The item bit Project sets on a resource with a rate table.
+pub(super) const R_RATE_TABLE_BIT: (usize, u8) = (15, 1);
+const RATE_TABLE_HEADER: usize = 16;
+const RATE_PERIOD_LEN: usize = 44;
+/// Rate formats: per hour, per unit (materials).
+const RATE_PER_HOUR: u32 = 2;
+const RATE_PER_UNIT: u32 = 8;
+/// The end Project gives the last period of a rate table.
+const RATES_NEVER_END: u32 = 0x340A_75F7;
 /// The baseline's duration format, as Project stores it with a baseline.
 const TV_BASELINE_FORMAT: u16 = 0xB3;
 const BASELINE_FORMAT: [u8; 2] = [0x35, 0];
@@ -132,6 +143,13 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
         write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid), progress.unwrap_or_default());
     }
     tasks.save(&mut file)?;
+
+    let mut resources = Store::load(&file, "TBkndRsc");
+    for (old, new) in before.resources.iter().zip(&after.resources) {
+        let at = resources.find(R_UID, new.uid as u32).ok_or_else(|| MppError(format!("recurso {} não encontrado no .mpp", new.uid)))?;
+        write_resource(&mut resources, at, old, new, after.start);
+    }
+    resources.save(&mut file)?;
 
     let mut links = Store::load(&file, "TBkndCons");
     for t in &after.tasks {
@@ -245,7 +263,7 @@ fn same_structure(before: &Project, after: &Project) -> Result<()> {
     let resources = |p: &Project| {
         p.resources
             .iter()
-            .map(|r| format!("{} {} {:?} {:?} {} {:?}", r.uid, r.name, r.kind, r.rates, r.max_units, r.calendar.map(|c| working_time(&p.calendars[c]))))
+            .map(|r| format!("{} {:?} {:?}", r.uid, r.kind, r.calendar.map(|c| working_time(&p.calendars[c]))))
             .collect::<Vec<_>>()
     };
     if resources(before) != resources(after) {
@@ -368,6 +386,56 @@ fn write_progress(r: &mut [u8], q: &crate::model::Progress, stop: Option<NaiveDa
     put_date(r, T_STOP, stop);
     put_date(r, T_RESUME, resume);
     put_date(r, T_STARTED_AT, started);
+}
+
+/// Writes resource `new` over the record that holds `old`: name, maximum units and rates (the
+/// first period in the record, every period in the rate table when there is more than one).
+fn write_resource(resources: &mut Store, at: usize, old: &Resource, new: &Resource, project_start: NaiveDateTime) {
+    let uid = new.uid as u32;
+    if old.name != new.name {
+        resources.set_text(uid, RV_NAME, &new.name);
+    }
+    if old.max_units != new.max_units {
+        put_f64(resources.record(at), R_MAX_UNITS, new.max_units * 10000.0);
+    }
+    if old.rates == new.rates {
+        return;
+    }
+    let first = new.rate_at(project_start);
+    let r = resources.record(at);
+    put_f64(r, R_STANDARD_RATE, first.standard);
+    put_f64(r, R_OVERTIME_RATE, first.overtime);
+    put_f64(r, R_COST_PER_USE, first.per_use * 100.0);
+    if new.rates.len() > 1 || resources.var(uid, RV_RATE_TABLE).is_some() {
+        resources.set_or_add_var(uid, RV_RATE_TABLE, RESOURCE_VAR_FLAGS, rate_table(new));
+        set_flag(resources.item(at), R_RATE_TABLE_BIT, true);
+    }
+}
+
+/// Cost rate table A as Project stores it: the number of periods, a header (16 bytes), then per
+/// period the standard rate, its format, the overtime rate, its format, the cost per use (cents)
+/// and the period's end (tenths of a minute since 1983-12-31); the last one never ends.
+pub(super) fn rate_table(r: &Resource) -> Vec<u8> {
+    let format = if r.kind == crate::model::ResourceKind::Material { RATE_PER_UNIT } else { RATE_PER_HOUR };
+    let mut out = vec![0u8; RATE_TABLE_HEADER];
+    put_u16(&mut out, 0, r.rates.len() as u16);
+    put_u16(&mut out, 2, 4);
+    put_u32(&mut out, 4, RATE_TABLE_HEADER as u32);
+    for (k, rate) in r.rates.iter().enumerate() {
+        let mut e = [0u8; RATE_PERIOD_LEN];
+        put_f64(&mut e, 0, rate.standard);
+        put_u32(&mut e, 8, format);
+        put_f64(&mut e, 16, rate.overtime);
+        put_u32(&mut e, 24, RATE_PER_HOUR);
+        put_f64(&mut e, 32, rate.per_use * 100.0);
+        let end = r.rates.get(k + 1).map_or(RATES_NEVER_END, |next| {
+            let minutes = (next.from - epoch().and_hms_opt(0, 0, 0).unwrap()).num_seconds() / 6;
+            minutes as u32
+        });
+        put_u32(&mut e, 40, end);
+        out.extend_from_slice(&e);
+    }
+    out
 }
 
 /// A task's baseline 0, in its variable data: start, finish, duration (tenths of a minute), work

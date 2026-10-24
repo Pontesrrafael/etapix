@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use super::update::{ITEM_VAR_COUNT, set_prop, working_time, put_date, put_f64, put_u16, put_u32, set_flag, F_SUMMARY, PLACEHOLDER_RESOURCE};
+use super::update::{rate_table, RESOURCE_VAR_FLAGS, R_RATE_TABLE_BIT, ITEM_VAR_COUNT, set_prop, working_time, put_date, put_f64, put_u16, put_u32, set_flag, F_SUMMARY, PLACEHOLDER_RESOURCE};
 use super::*;
 use crate::calendar::Calendar;
 use crate::model::{Project, ResourceKind};
@@ -113,9 +113,6 @@ fn lay_out(file: &mut cfb::Compound, p: &Project, guids: &Guids, calendars: &Cal
 /// What a new file cannot hold yet.
 fn check_supported(p: &Project) -> Result<()> {
     let unsupported = |what: &str| err(format!("{what}: um .mpp novo com isso ainda precisa do Microsoft Project"));
-    if p.resources.iter().any(|r| r.rates.len() > 1) {
-        return unsupported("recurso com taxas que mudam com o tempo");
-    }
     if p.assignments.iter().any(|a| a.overtime_work > 0) {
         return unsupported("horas extras");
     }
@@ -584,6 +581,10 @@ fn build_resources(file: &mut cfb::Compound, p: &Project, guids: &Guids, calenda
                 }
             }
             set_var(&mut row.vars, RV_NAME, utf16z(&r.name));
+            if r.rates.len() > 1 {
+                set_or_add_var(&mut row.vars, RV_RATE_TABLE, RESOURCE_VAR_FLAGS, rate_table(r));
+                set_flag(&mut row.item, R_RATE_TABLE_BIT, true);
+            }
             row
         });
         put_u32(&mut row.record, R_ID, id);
