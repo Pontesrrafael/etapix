@@ -32,6 +32,7 @@ fn main() {
         Some((cmd, rest)) if cmd == "prepare-new" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::New),
         Some((cmd, rest)) if cmd == "prepare-structure" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Structure),
         Some((cmd, rest)) if cmd == "prepare-progress" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Progress),
+        Some((cmd, rest)) if cmd == "prepare-baseline" && rest.len() >= 2 => prepare(Path::new(&rest[0]), &rest[1..], Mode::Baseline),
         Some((cmd, rest)) if cmd == "verify" && rest.len() == 1 => verify(Path::new(&rest[0])),
         _ => eprintln!("uso: mpp_write_check prepare SAIDA arquivo.mpp... | verify SAIDA"),
     }
@@ -48,6 +49,8 @@ enum Mode {
     Structure,
     /// Progress recorded on tasks, saved into the file.
     Progress,
+    /// A baseline saved, saved into the file.
+    Baseline,
 }
 
 fn prepare(out: &Path, files: &[String], mode: Mode) {
@@ -63,6 +66,7 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
             Mode::Edit => edits::edit(&mut project),
             Mode::Structure => edits::restructure(&mut project),
             Mode::Progress => edits::track(&mut project),
+            Mode::Baseline => edits::baseline(&mut project),
             Mode::New => {}
         }
         let cals = Calendars::new(&project).unwrap();
@@ -73,7 +77,7 @@ fn prepare(out: &Path, files: &[String], mode: Mode) {
         let saved = match mode {
             Mode::Edit => update_mpp(&original, &xml),
             Mode::New => create_mpp(&xml),
-            Mode::Structure | Mode::Progress => save_mpp(&original, &xml),
+            Mode::Structure | Mode::Progress | Mode::Baseline => save_mpp(&original, &xml),
         };
         match saved {
             Ok(bytes) => {

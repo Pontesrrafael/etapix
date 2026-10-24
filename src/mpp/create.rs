@@ -116,9 +116,6 @@ fn check_supported(p: &Project) -> Result<()> {
     if p.assignments.iter().any(|a| a.overtime_work > 0) {
         return unsupported("horas extras");
     }
-    if p.tasks.iter().any(|t| t.baseline.is_some()) {
-        return unsupported("linha de base");
-    }
     Ok(())
 }
 
@@ -224,7 +221,9 @@ impl Rows {
             let uid = if r.is_index() { u32::MAX } else { u32_at(&r.record, self.uid_at) };
             r.vars.iter().map(move |(ty, flags, v)| (uid, *ty, *flags, v))
         });
-        let vars: Vec<_> = row_vars.chain(self.other_vars.iter().map(|(u, t, f, v)| (*u, *t, *f, v))).collect();
+        let mut vars: Vec<_> = row_vars.chain(self.other_vars.iter().map(|(u, t, f, v)| (*u, *t, *f, v))).collect();
+        // Project looks values up by (UID, field type) in a sorted index.
+        vars.sort_by_key(|&(uid, ty, _, _)| (uid, ty));
         for (uid, ty, flags, value) in &vars {
             var_meta.extend_from_slice(&uid.to_le_bytes());
             var_meta.extend_from_slice(&(var_data.len() as u32).to_le_bytes());

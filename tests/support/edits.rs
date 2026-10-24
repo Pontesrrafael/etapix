@@ -30,6 +30,8 @@ pub fn edit(p: &mut Project) {
 /// linked after the first (with the first resource, when there is one), and a new link.
 #[allow(dead_code)] // not every test binary uses both edit sets
 pub fn restructure(p: &mut Project) {
+    // Project never gives a deleted task's UID to a new one.
+    let uid = p.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
     if let Some(last) = p.tasks.len().checked_sub(1).filter(|&l| l > 0 && !p.tasks[l].summary) {
         p.tasks.remove(last);
         for t in &mut p.tasks {
@@ -37,7 +39,6 @@ pub fn restructure(p: &mut Project) {
         }
         p.assignments.retain(|a| a.task != last);
     }
-    let uid = p.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
     let mut task = Task::new(uid, p.tasks.len() as i64 + 1, "Nova tarefa", 960);
     if !p.tasks.is_empty() && !p.tasks[0].summary {
         task.preds.push(Link { pred: 0, kind: LinkType::FinishToStart, lag: 0, lag_elapsed: false });
@@ -77,4 +78,13 @@ pub fn track(p: &mut Project) {
             _ => {}
         }
     }
+}
+
+/// A baseline saved from the current schedule, the way Etapix's "Definir linha de base" does.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn baseline(p: &mut Project) {
+    let Ok(cals) = pjsched::calendar::Calendars::new(p) else { return };
+    let Ok(schedule) = pjsched::cpm::schedule(p, &cals, None) else { return };
+    let costs = pjsched::cost::costs(p, &cals, &schedule);
+    pjsched::tracking::save_baseline(p, &cals, &schedule, &costs);
 }

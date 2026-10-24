@@ -73,6 +73,20 @@ const A_STOP: usize = 104;
 const AV_CONTOUR: u16 = 0x31;
 const AV_DONE_CONTOUR: u16 = 0x32;
 const ASSIGNMENT_VAR_FLAGS: u16 = 0x0F40;
+/// Entry flags of a task's variable data.
+const TASK_VAR_FLAGS: u16 = 0x0B40;
+/// The baseline's duration format, as Project stores it with a baseline.
+const TV_BASELINE_FORMAT: u16 = 0xB3;
+const BASELINE_FORMAT: [u8; 2] = [0x35, 0];
+/// The item bits Project sets on a task, and on an assignment, that have a baseline.
+const T_BASELINE_BITS: [(usize, u8); 8] = [(20, 1), (20, 2), (21, 0), (21, 1), (21, 2), (21, 3), (21, 4), (27, 4)];
+const A_BASELINE_BITS: [(usize, u8); 5] = [(13, 7), (14, 0), (14, 6), (14, 7), (32, 6)];
+// An assignment's baseline: work, cost, another amount, start, finish.
+const AV_BASELINE_WORK: u16 = 0x10;
+const AV_BASELINE_COST: u16 = 0x20;
+const AV_BASELINE_OTHER: u16 = 0x10B;
+const AV_BASELINE_START: u16 = 0x92;
+const AV_BASELINE_FINISH: u16 = 0x93;
 /// The done-work contour: count, segment length and the offset of a closing copy in the header,
 /// one segment from 8, the copy (work, rate, span) at 36.
 const DONE_CONTOUR_LEN: usize = 56;
@@ -148,6 +162,14 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
             let tracked = dates.assignments.iter().find(|a| a.task == t.uid as u32 && a.resource == PLACEHOLDER_RESOURCE);
             let untracked = AssignmentDates::unstarted(t.uid as u32, PLACEHOLDER_RESOURCE, 1.0, t.duration as f64, start, finish);
             assignments.write_assignment(at, tracked.unwrap_or(&untracked))?;
+        }
+    }
+    // A baseline saved on a task is saved on each of its assignments too: Project reads it there.
+    for (_, t) in before.tasks.iter().zip(&after.tasks).filter(|(o, t)| o.baseline != t.baseline) {
+        let Some(b) = &t.baseline else { continue };
+        let rows: Vec<usize> = (0..assignments.rows.len()).filter(|&k| assignments.is_live_assignment_of(k, t.uid as u32)).collect();
+        for row in rows {
+            write_assignment_baseline(&mut assignments, row, b);
         }
     }
     assignments.save(&mut file)?;
@@ -228,9 +250,6 @@ fn same_structure(before: &Project, after: &Project) -> Result<()> {
     if options(before) != options(after) {
         return unsupported("opções do projeto alteradas");
     }
-    if before.tasks.iter().zip(&after.tasks).any(|(a, b)| a.baseline != b.baseline) {
-        return unsupported("linha de base alterada");
-    }
     Ok(())
 }
 
@@ -245,6 +264,14 @@ pub(super) fn working_time(c: &Calendar) -> String {
 fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Option<&(NaiveDateTime, NaiveDateTime)>, (stop, resume): (Option<NaiveDateTime>, Option<NaiveDateTime>)) {
     if old.name != new.name {
         tasks.set_text(new.uid as u32, TV_NAME, &new.name);
+    }
+    if old.baseline != new.baseline {
+        if let Some(b) = &new.baseline {
+            write_baseline(tasks, new.uid as u32, b);
+            for bit in T_BASELINE_BITS {
+                set_flag(tasks.item(at), bit, true);
+            }
+        }
     }
     let r = tasks.record(at);
     if (old.duration, old.elapsed) != (new.duration, new.elapsed) {
@@ -329,6 +356,42 @@ fn write_progress(r: &mut [u8], q: &crate::model::Progress, stop: Option<NaiveDa
     put_date(r, T_STOP, stop);
     put_date(r, T_RESUME, resume);
     put_date(r, T_STARTED_AT, started);
+}
+
+/// A task's baseline 0, in its variable data: start, finish, duration (tenths of a minute), work
+/// (thousandths of a minute) and cost (cents).
+fn write_baseline(tasks: &mut Store, uid: u32, b: &crate::model::Baseline) {
+    let date = |d: NaiveDateTime| {
+        let mut v = vec![0u8; 4];
+        put_date(&mut v, 0, Some(d));
+        v
+    };
+    tasks.set_or_add_var(uid, TV_BASELINE_START, TASK_VAR_FLAGS, date(b.start));
+    tasks.set_or_add_var(uid, TV_BASELINE_FINISH, TASK_VAR_FLAGS, date(b.finish));
+    tasks.set_or_add_var(uid, TV_BASELINE_DURATION, TASK_VAR_FLAGS, ((b.duration * 10) as u32).to_le_bytes().to_vec());
+    tasks.set_or_add_var(uid, TV_BASELINE_WORK, TASK_VAR_FLAGS, (b.work * 1000.0).to_le_bytes().to_vec());
+    tasks.set_or_add_var(uid, TV_BASELINE_COST, TASK_VAR_FLAGS, (b.cost * 100.0).to_le_bytes().to_vec());
+    tasks.set_or_add_var(uid, TV_BASELINE_FORMAT, TASK_VAR_FLAGS, BASELINE_FORMAT.to_vec());
+}
+
+/// An assignment's baseline 0: its dates, with work and cost left at 0, as Project saves them for
+/// a task's assignments.
+fn write_assignment_baseline(assignments: &mut Store, row: usize, b: &crate::model::Baseline) {
+    let uid = u32_at(assignments.record(row), A_UID);
+    let date = |d: NaiveDateTime| {
+        let mut v = vec![0u8; 4];
+        put_date(&mut v, 0, Some(d));
+        v
+    };
+    for ty in [AV_BASELINE_WORK, AV_BASELINE_COST, AV_BASELINE_OTHER] {
+        assignments.set_or_add_var(uid, ty, ASSIGNMENT_VAR_FLAGS, 0f64.to_le_bytes().to_vec());
+    }
+    assignments.set_or_add_var(uid, AV_BASELINE_START, ASSIGNMENT_VAR_FLAGS, date(b.start));
+    assignments.set_or_add_var(uid, AV_BASELINE_FINISH, ASSIGNMENT_VAR_FLAGS, date(b.finish));
+    let item = assignments.item(row);
+    for bit in A_BASELINE_BITS {
+        set_flag(item, bit, true);
+    }
 }
 
 /// Tasks whose dates, and assignments, stay as the file has them: a manual task's dates are what
@@ -437,6 +500,7 @@ impl Store {
 
     fn save(mut self, file: &mut cfb::Compound) -> Result<()> {
         self.count_vars();
+        self.sort_var_index();
         let streams = [("FixedMeta", self.meta), ("FixedData", self.data), ("Fixed2Meta", self.meta2), ("Fixed2Data", self.data2), ("VarMeta", self.var_meta), ("Var2Data", self.var_data)];
         for (s, bytes) in streams {
             let path = format!("/   114/{}/{s}", self.name);
@@ -445,6 +509,18 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Project looks variable values up by (UID, field type) in a sorted index: values added at
+    /// its end would not be found.
+    fn sort_var_index(&mut self) {
+        if self.var_meta.len() < 24 {
+            return;
+        }
+        let mut entries: Vec<[u8; 12]> = self.var_meta[24..].as_chunks::<12>().0.to_vec();
+        entries.sort_by_key(|e| (u32_at(e, 0), u16_at(e, 8)));
+        self.var_meta.truncate(24);
+        self.var_meta.extend(entries.into_iter().flatten());
     }
 
     /// Each live record's item holds, at 2, how many variable values the record has.
@@ -467,6 +543,12 @@ impl Store {
     /// The first live record that `matches` (index entries and deleted records are skipped).
     fn find_live(&self, matches: impl Fn(&[u8]) -> bool) -> Option<usize> {
         self.rows.iter().position(|(item, r, _)| r.len() > 16 && !is_deleted(&self.meta[item.clone()]) && matches(&self.data[r.clone()]))
+    }
+
+    fn is_live_assignment_of(&self, row: usize, task: u32) -> bool {
+        let (item, r, _) = &self.rows[row];
+        let r = &self.data[r.clone()];
+        r.len() > A_FINISH && !is_deleted(&self.meta[item.clone()]) && u32_at(r, A_TASK) == task
     }
 
     fn find(&self, offset: usize, value: u32) -> Option<usize> {

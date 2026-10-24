@@ -31,6 +31,9 @@ pub struct Doc {
     pending: Option<Project>,
     undo: Vec<Project>,
     redo: Vec<Project>,
+    /// The largest task UID this document has used: a deleted task's UID is never given to a new
+    /// one, as in Project (a `.mpp` keeps the deleted task's record under it).
+    last_uid: i64,
 }
 
 /// How many actions Desfazer can go back.
@@ -57,7 +60,8 @@ impl Doc {
 
     fn from_project(project: Project, path: Option<PathBuf>) -> Result<Self, String> {
         let (cals, schedule, costs, tracking) = compute(&project)?;
-        Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false, version: 0, pending: None, undo: Vec::new(), redo: Vec::new() })
+        let last_uid = project.tasks.iter().map(|t| t.uid).max().unwrap_or(0);
+        Ok(Doc { project, path, cals, schedule, costs, tracking, dirty: false, version: 0, pending: None, undo: Vec::new(), redo: Vec::new(), last_uid })
     }
 
     /// Writes `.mpp` (natively into the original file, or through the installed Project) or Project
@@ -98,7 +102,7 @@ impl Doc {
 
     #[cfg(test)]
     pub fn add_task(&mut self, name: &str, days: f64) -> Result<usize, String> {
-        let uid = self.project.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
+        let uid = self.next_task_uid();
         let id = self.project.tasks.len() as i64 + 1;
         let duration = (days * DAY as f64).round() as Wm;
         self.apply(|p| {
@@ -109,6 +113,12 @@ impl Doc {
     }
 
     /// Removes a task and every link, assignment and parent reference to it.
+    /// A UID no task of this document has had.
+    fn next_task_uid(&mut self) -> i64 {
+        self.last_uid = self.last_uid.max(self.project.tasks.iter().map(|t| t.uid).max().unwrap_or(0)) + 1;
+        self.last_uid
+    }
+
     pub fn delete_task(&mut self, i: usize) -> Result<(), String> {
         self.apply(|p| {
             let remap = |k: usize| if k > i { k - 1 } else { k };
@@ -129,7 +139,7 @@ impl Doc {
     /// Inserts a task at row `at` (an empty row past the end appends), shifting every reference.
     pub fn insert_task(&mut self, at: usize, name: &str, days: f64) -> Result<usize, String> {
         let at = at.min(self.project.tasks.len());
-        let uid = self.project.tasks.iter().map(|t| t.uid).max().unwrap_or(0) + 1;
+        let uid = self.next_task_uid();
         let duration = (days * DAY as f64).round() as Wm;
         self.apply(|p| {
             let shift = |k: usize| if k >= at { k + 1 } else { k };
