@@ -54,10 +54,11 @@ fn new_files_read_back_as_saved() {
 
 #[test]
 fn unsupported_projects_are_refused_with_a_reason() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus/b17/B17-C4-material.mpp");
-    let project = read_project(&mpp_to_mspdi(&std::fs::read(path).unwrap()).unwrap()).unwrap();
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/mpp-corpus/b1/S8-unidades-50.mpp");
+    let mut project = read_project(&mpp_to_mspdi(&std::fs::read(path).unwrap()).unwrap()).unwrap();
+    project.resources[0].kind = pjsched::model::ResourceKind::Cost;
     let cals = Calendars::new(&project).unwrap();
     let schedule = cpm::schedule(&project, &cals, None).unwrap();
     let err = create_mpp(&write_project(&project, &cals, &schedule, "teste")).unwrap_err();
-    assert!(err.0.contains("material") && err.0.contains("Microsoft Project"), "{}", err.0);
+    assert!(err.0.contains("recurso de custo") && err.0.contains("Microsoft Project"), "{}", err.0);
 }

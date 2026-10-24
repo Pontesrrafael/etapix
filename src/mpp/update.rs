@@ -152,7 +152,10 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
             continue;
         }
         let at = assignments.find_assignment(a.task, a.resource).ok_or_else(|| MppError("atribuição não encontrada no .mpp".into()))?;
-        assignments.write_assignment(at, a)?;
+        let material = after.resources.iter().any(|r| r.uid == a.resource as i64 && r.kind == crate::model::ResourceKind::Material);
+        let span = pairs.get(&(a.task as i64)).map_or(0, |(_, t)| t.duration) as f64;
+        let a = if material { a.as_material(span) } else { a.clone() };
+        assignments.write_assignment(at, &a)?;
     }
     // Project gives every task without resources a placeholder assignment that carries its work
     // and dates: it rebuilds the task's duration from there.
@@ -417,6 +420,7 @@ struct Dates {
     assignments: Vec<AssignmentDates>,
 }
 
+#[derive(Clone)]
 struct AssignmentDates {
     task: u32,
     resource: u32,
@@ -429,12 +433,36 @@ struct AssignmentDates {
     actual: f64,
     stop: Option<NaiveDateTime>,
     resume: Option<NaiveDateTime>,
+    /// For a material resource, the task's duration (working minutes): its "work" is a quantity,
+    /// spread over the task.
+    material_span: Option<f64>,
 }
 
 impl AssignmentDates {
     /// An assignment that has not started: all its work remains, from its start.
     fn unstarted(task: u32, resource: u32, units: f64, work: f64, start: NaiveDateTime, finish: NaiveDateTime) -> Self {
-        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None }
+        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None }
+    }
+
+    /// The assignment of a material resource on a task of `span` working minutes: its work is a
+    /// quantity (an hour per unit), spread over the task.
+    fn as_material(&self, span: f64) -> Self {
+        AssignmentDates { material_span: Some(span), ..self.clone() }
+    }
+
+    /// The contour rate: units × 160000 for work, × 10000 for a material's quantity.
+    fn rate(&self) -> f64 {
+        self.units * if self.material_span.is_some() { 10_000.0 } else { 160_000.0 }
+    }
+
+    /// Working minutes over which `part` of the work spreads.
+    fn span(&self, part: f64) -> f64 {
+        match self.material_span {
+            Some(span) if self.work > 0.0 => span * part / self.work,
+            Some(_) => 0.0,
+            None if self.units > 0.0 => part / self.units,
+            None => 0.0,
+        }
     }
 }
 
@@ -466,6 +494,7 @@ impl Dates {
                     actual: if actual.is_empty() { 0.0 } else { parse_duration(&actual).map_err(|e| MppError(e.0))? as f64 },
                     stop,
                     resume,
+                    material_span: None,
                 });
             }
         }
@@ -593,9 +622,9 @@ impl Store {
             return err("trabalho de atribuição com distribuição irregular (nivelada ou editada no Project): essa alteração ainda não pode ser gravada direto no .mpp");
         }
         let mut contour = contour[..UNIFORM_CONTOUR_LEN].to_vec();
-        let rate = a.units * 160_000.0;
-        uniform_segment(&mut contour, C_FIRST, rate, remaining, a.units);
-        let tail = closing_copy(rate, remaining, a.units);
+        let rate = a.rate();
+        uniform_segment(&mut contour, C_FIRST, rate, remaining, a.span(remaining));
+        let tail = closing_copy(rate, remaining, a.span(remaining));
         contour[C_TAIL..].copy_from_slice(&tail);
         if a.actual > 0.0 {
             contour.extend_from_slice(&tail);
@@ -607,10 +636,11 @@ impl Store {
             put_u16(&mut done, 0, 1);
             put_u16(&mut done, 2, DONE_SEGMENT_LEN);
             put_u32(&mut done, 4, DONE_TAIL as u32);
-            uniform_segment(&mut done, C_FIRST, a.units * 10_000.0, a.actual, a.units);
+            let rate = a.units * 10_000.0;
+            uniform_segment(&mut done, C_FIRST, rate, a.actual, a.span(a.actual));
             put_f64(&mut done, DONE_TAIL, a.actual * 1000.0);
-            put_f64(&mut done, DONE_TAIL + 8, a.units * 10_000.0);
-            put_u32(&mut done, DONE_TAIL + 16, span_of(a.actual, a.units));
+            put_f64(&mut done, DONE_TAIL + 8, rate);
+            put_u32(&mut done, DONE_TAIL + 16, span_code(a.span(a.actual)));
             self.set_or_add_var(uid, AV_DONE_CONTOUR, ASSIGNMENT_VAR_FLAGS, done);
         }
         Ok(())
@@ -692,26 +722,25 @@ pub(super) fn put_f64(b: &mut [u8], o: usize, v: f64) {
     }
 }
 
-/// One contour segment at `at`: the rate, the work (thousandths of a minute) and its span in
-/// working minutes × 80.
-fn uniform_segment(b: &mut [u8], at: usize, rate: f64, work: f64, units: f64) {
+/// One contour segment at `at`: the rate, the work (thousandths of a minute) and its span.
+fn uniform_segment(b: &mut [u8], at: usize, rate: f64, work: f64, span: f64) {
     put_f64(b, at, rate);
     put_f64(b, at + 8, work * 1000.0);
-    put_u32(b, at + 16, span_of(work, units));
+    put_u32(b, at + 16, span_code(span));
 }
 
 /// A contour's closing copy: work, rate, then the span 24 bytes in.
-fn closing_copy(rate: f64, work: f64, units: f64) -> [u8; 28] {
+fn closing_copy(rate: f64, work: f64, span: f64) -> [u8; 28] {
     let mut b = [0u8; 28];
     put_f64(&mut b, 0, work * 1000.0);
     put_f64(&mut b, 8, rate);
-    put_u32(&mut b, 24, span_of(work, units));
+    put_u32(&mut b, 24, span_code(span));
     b
 }
 
-fn span_of(work: f64, units: f64) -> u32 {
-    let span = if units > 0.0 { work / units } else { 0.0 };
-    (span * 80.0).round() as u32
+/// A span of working minutes as contours store it (× 80).
+fn span_code(minutes: f64) -> u32 {
+    (minutes * 80.0).round() as u32
 }
 
 /// The inverse of [`date_at`]: tenths of a minute, then days since 1983-12-31; NA for `None`.

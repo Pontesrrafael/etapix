@@ -14,7 +14,7 @@
 //! Task work changes are spread over the assignments in proportion to their current work.
 //! Fixed-units and fixed-work tasks then last as long as their longest assignment.
 
-use crate::model::{Assignment, Piece, Project, TaskType, Wm};
+use crate::model::{Assignment, Piece, Project, ResourceKind, TaskType, Wm};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -79,6 +79,13 @@ pub fn add_assignment(p: &mut Project, task: usize, resource: usize, units: f64)
     let existing = assignment_indices(p, task);
     let total: f64 = existing.iter().map(|&i| p.assignments[i].work()).sum();
     let d = p.tasks[task].duration;
+    // A material's units are a quantity: Project counts it as one hour of work per unit, spread
+    // over the task, and leaves the work resources' effort alone.
+    if p.resources[resource].kind == ResourceKind::Material {
+        let rate = if d > 0 { units * 60.0 / d as f64 } else { 0.0 };
+        p.assignments.push(Assignment::uniform(task, resource, units, d, rate));
+        return Ok(());
+    }
     p.assignments.push(Assignment::uniform(task, resource, units, d, units));
     if is_effort_driven(p, task) && !existing.is_empty() {
         redistribute_by_units(p, task, total);

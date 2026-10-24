@@ -110,8 +110,8 @@ fn check_supported(p: &Project) -> Result<()> {
     if p.resources.iter().any(|r| r.rates.len() > 1) {
         return unsupported("recurso com taxas que mudam com o tempo");
     }
-    if p.resources.iter().any(|r| r.kind != ResourceKind::Work) {
-        return unsupported("recurso material ou de custo");
+    if p.resources.iter().any(|r| r.kind == ResourceKind::Cost) {
+        return unsupported("recurso de custo");
     }
     if p.assignments.iter().any(|a| a.overtime_work > 0) {
         return unsupported("horas extras");
