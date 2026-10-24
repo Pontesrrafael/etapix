@@ -305,7 +305,7 @@ impl App {
                         for c in cards.iter().filter(|c| cfg!(windows) || !c.windows_only) {
                             let t = content::tutorial(c.tutorial).unwrap();
                             let benefit = if c.tutorial == "arquivo" && !cfg!(windows) {
-                                "No Linux, .mpp abre mas não salva: salve em Project XML (.xml), que o Project lê e grava."
+                                "No Linux, .mpp abre e salva como no Windows sem o Project."
                             } else {
                                 c.benefit
                             };

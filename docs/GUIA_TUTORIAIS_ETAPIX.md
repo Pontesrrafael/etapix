@@ -19,7 +19,7 @@ A seção 10 diz o que foi verificado e a seção **Pendências**, o que falta.
 | Público principal | Equipe interna que já usa ou usaria o Microsoft Project: planejadores, coordenadores e gestores de projeto. Parte do público vem do Project e espera os mesmos nomes; parte nunca usou uma ferramenta de cronograma. |
 | Módulos prioritários | 1. Grade de tarefas e Gráfico de Gantt. 2. Aba Tarefa. 3. Arquivo (abrir e salvar `.mpp`/`.xml`). 4. Aba Recurso. 5. Aba Projeto. 6. Aba Exibir e Formato. 7. Aba Relatório. 8. Linha do Tempo. 9. Conector para Claude e Codex. |
 | Tecnologia e componentes existentes | Rust, interface em egui/eframe 0.29 (modo imediato, sem HTML nem DOM). Faixa de opções em `app/src/ribbon.rs`, janelas em `app/src/dialogs.rs`, grade e Gantt em `app/src/main.rs` e `app/src/gantt.rs`, ícones desenhados em `app/src/icons.rs`. Motor de agendamento `pjsched`. Testes de interface sem janela em `app/src/monkey_tests.rs`. |
-| Perfis e permissões | Não há perfis nem login: é um aplicativo de mesa por pessoa, e quem abre um arquivo pode alterá-lo. As únicas restrições são de contexto: comandos que exigem uma tarefa selecionada, incluir ou excluir tarefas, vínculos ou recursos num `.mpp` só com o Microsoft Project instalado (abrir e salvar alterações nas tarefas funcionam em qualquer máquina) e Claude Desktop só no Windows. |
+| Perfis e permissões | Não há perfis nem login: é um aplicativo de mesa por pessoa, e quem abre um arquivo pode alterá-lo. As únicas restrições são de contexto: comandos que exigem uma tarefa selecionada, andamento, linha de base, recursos materiais e horas extras num `.mpp` só com o Microsoft Project instalado (abrir, criar e salvar `.mpp` funcionam em qualquer máquina) e Claude Desktop só no Windows. |
 | Identidade visual | Paleta Etapix: verde-petróleo `#0B6B66` (marca, abas, seleção), azul-marinho `#1E2F3E` (texto), esmeralda `#14C38E` (barras, destaques), menta `#4EE7C7` e cinzas claros. Fontes Inter (texto) e Plus Jakarta Sans (títulos), embutidas. Faixa de opções e termos iguais aos do Microsoft Project em português. |
 | Progresso entre dispositivos | Local, por usuário do sistema operacional: no mesmo arquivo de configurações que o Etapix já usa (`%APPDATA%\Etapix\settings.txt` no Windows, `~/.config/etapix/settings.txt` no Linux). Não há sincronização. |
 | Responsável pela revisão do conteúdo | `[A DEFINIR]`: responsável pelo Etapix na equipe (sugestão: rafael.pontes). |
@@ -45,7 +45,7 @@ Começar por estes pontos, em ordem:
   (estrutura de tópicos).
 - **Mais dúvida:** a sintaxe das predecessoras (`3II`, `2TI+2 dias`), as tarefas manuais e
   automáticas e o nivelamento.
-- **Maior impacto de erro:** salvar `.mpp` (inclusões e exclusões dependem do Project instalado), mover o projeto
+- **Maior impacto de erro:** salvar `.mpp` (sem o Project, inclusões e exclusões recriam o arquivo), mover o projeto
   inteiro, nivelar recursos e definir a linha de base (que substitui a anterior).
 
 ## 3. Catálogo de recursos
@@ -225,9 +225,9 @@ Entregável, Anotações, Detalhes e Preencher.
 
 **O que você pode fazer aqui:**
 - **Novo**, **Abrir**, **Salvar** e **Salvar como**.
-- Abrir `.mpp` em qualquer máquina, sem o Project, e salvar nele as alterações nas tarefas que já
-  existem; incluir ou excluir tarefas, vínculos ou recursos e salvar em `.mpp` com o Microsoft
-  Project instalado; abrir e salvar Project XML (`.xml`).
+- Abrir, criar e salvar `.mpp` em qualquer máquina, sem o Project. Num `.mpp` existente, incluir
+  ou excluir tarefas usa o Project instalado, que mantém os modos de exibição feitos nele; sem o
+  Project, o Etapix recria o arquivo e avisa. Abrir e salvar Project XML (`.xml`).
 
 **Procedimento: Abrir um `.mpp`**
 1. Clique em **Arquivo > Abrir**.
@@ -238,8 +238,9 @@ Entregável, Anotações, Detalhes e Preencher.
 
 **Se não funcionar:** "não foi possível ler o .mpp" indica um arquivo anterior ao Project 2010 ou
 corrompido: abra-o no Project e salve de novo, ou peça o arquivo em `.xml`. Ao salvar, "não foi possível
-gravar direto no .mpp" indica uma alteração que ainda precisa do Project (incluir ou excluir
-tarefas, vínculos ou recursos): salve em `.xml` ou use uma máquina com o Project; "conversão pelo
+gravar direto no .mpp" indica algo que ainda precisa do Project (andamento, linha de base, recurso
+material, taxas que mudam com o tempo, horas extras): salve em `.xml` ou use uma máquina com o
+Project; "conversão pelo
 Microsoft Project falhou" indica que o arquivo está aberto no Project: feche-o lá e tente de novo.
 
 **Procedimento: Salvar**
@@ -254,8 +255,8 @@ Microsoft Project falhou" indica que o arquivo está aberto no Project: feche-o 
 - O `.mpp` é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original
   não é alterado.
 
-**Limitações e permissões:** incluir ou excluir tarefas, vínculos ou recursos num `.mpp` exige o
-Microsoft Project instalado. Imprimir,
+**Limitações e permissões:** sem o Microsoft Project, incluir ou excluir tarefas num `.mpp`
+existente recria o arquivo, sem os modos de exibição e formatações feitos no Project. Imprimir,
 Exportar, Compartilhar e Opções ainda não existem.
 
 **Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.

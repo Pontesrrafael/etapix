@@ -1,29 +1,34 @@
 # Opens every .mpp in a folder in the installed Microsoft Project, hidden, and saves each as
 # NAME.proj.xml next to it (used by examples/mpp_write_check.rs). Files that Project cannot
 # open are reported. Project's recent-file list is cleaned of these files afterwards.
-param([Parameter(Mandatory)][string]$Dir)
+# One Project instance converts $Batch files, then a fresh one takes over: a long run in a
+# single instance ends up hanging.
+param([Parameter(Mandatory)][string]$Dir, [int]$Batch = 25)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $Dir = (Resolve-Path $Dir).Path
 $M = [System.Reflection.Missing]::Value
-$app = New-Object -ComObject MSProject.Application
-$app.DisplayAlerts = $false
-try {
-  foreach ($f in Get-ChildItem $Dir -Filter *.mpp) {
-    $xml = Join-Path $Dir ($f.BaseName + '.proj.xml')
-    Remove-Item $xml -ErrorAction SilentlyContinue
-    try {
-      # FileOpenEx(Name, ReadOnly, ..., openPool = pjDoNotOpenPool); FileSaveAs(Name, ..., FormatID)
-      [void]$app.FileOpenEx.Invoke(@($f.FullName, $true) + @($M) * 7 + @($M, $M, 4) + @($M) * 5)
-      [void]$app.FileSaveAs.Invoke(@($xml, 0) + @($M) * 7 + @('MSProject.XML') + @($M) * 9)
-      [void]$app.FileCloseEx(0, $M, $M)
-    } catch {
-      "$($f.Name): $($_.Exception.Message)"
+$files = @(Get-ChildItem $Dir -Filter *.mpp)
+for ($first = 0; $first -lt $files.Count; $first += $Batch) {
+  $app = New-Object -ComObject MSProject.Application
+  $app.DisplayAlerts = $false
+  try {
+    foreach ($f in $files[$first..([Math]::Min($first + $Batch, $files.Count) - 1)]) {
+      $xml = Join-Path $Dir ($f.BaseName + '.proj.xml')
+      Remove-Item $xml -ErrorAction SilentlyContinue
+      try {
+        # FileOpenEx(Name, ReadOnly, ..., openPool = pjDoNotOpenPool); FileSaveAs(Name, ..., FormatID)
+        [void]$app.FileOpenEx.Invoke(@($f.FullName, $true) + @($M) * 7 + @($M, $M, 4) + @($M) * 5)
+        [void]$app.FileSaveAs.Invoke(@($xml, 0) + @($M) * 7 + @('MSProject.XML') + @($M) * 9)
+        [void]$app.FileCloseEx(0, $M, $M)
+      } catch {
+        "$($f.Name): $($_.Exception.Message)"
+      }
     }
+  } finally {
+    [void]$app.Quit(0)
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app)
   }
-} finally {
-  [void]$app.Quit(0)
-  [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app)
 }
 $root = 'HKCU:\Software\Microsoft\Office\16.0\MS Project\User MRU'
 if (Test-Path $root) {

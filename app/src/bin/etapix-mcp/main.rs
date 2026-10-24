@@ -1,6 +1,6 @@
 //! etapix-mcp: a Model Context Protocol server (stdio) that lets an assistant such as Claude or
 //! Codex create and edit Etapix projects. Every tool works on a file path: it opens the file
-//! (`.xml`, or `.mpp` through the installed Microsoft Project), changes it with the same
+//! (`.xml` or `.mpp`, natively), changes it with the same
 //! operations as the app's ribbon, reschedules, and saves it back. The files open in Etapix and
 //! in Project.
 
@@ -76,14 +76,14 @@ fn handle(msg: &Value) -> Option<Value> {
 
 const INSTRUCTIONS: &str = "Etapix: cronogramas compatíveis com o Microsoft Project. Use caminhos absolutos. \
 Crie com criar_projeto, adicione tarefas com adicionar_tarefas (nivel 1 = topo; uma tarefa seguida de outras com nivel maior vira resumo), \
-confira datas e caminho crítico com ler_projeto. Arquivos .mpp abrem e recebem alterações de tarefas sem o Microsoft Project; incluir ou excluir tarefas, vínculos ou recursos num .mpp exige o Project instalado; .xml não.";
+confira datas e caminho crítico com ler_projeto. Arquivos .mpp abrem, são criados e salvos sem o Microsoft Project (andamento, linha de base, recursos materiais e horas extras ainda precisam dele); .xml funciona sempre.";
 
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "Caminho absoluto do arquivo do projeto (.xml ou .mpp)." });
     json!([
         {
             "name": "criar_projeto",
-            "description": "Cria um projeto vazio e o salva. .xml (Project XML) funciona em qualquer máquina; .mpp usa o Microsoft Project instalado.",
+            "description": "Cria um projeto vazio e o salva. .mpp ou .xml (Project XML), em qualquer máquina.",
             "inputSchema": { "type": "object", "required": ["caminho"], "properties": {
                 "caminho": path,
                 "inicio": { "type": "string", "description": "Data de início: dd/mm/aaaa ou aaaa-mm-dd. Padrão: próxima segunda-feira." }
@@ -142,7 +142,7 @@ fn tools() -> Value {
         },
         {
             "name": "salvar_como",
-            "description": "Salva uma cópia em outro caminho ou formato (.mpp pelo Microsoft Project instalado, ou .xml).",
+            "description": "Salva uma cópia em outro caminho ou formato (.mpp ou .xml).",
             "inputSchema": { "type": "object", "required": ["caminho", "destino"], "properties": { "caminho": path, "destino": path } }
         }
     ])
@@ -175,8 +175,8 @@ fn call(name: &str, args: &Value) -> Result<String, String> {
             if let Some(s) = text(args, "inicio") {
                 d.set_project_start(date(&s)?)?;
             }
-            d.save(Path::new(&path))?;
-            Ok(format!("Projeto criado em {path}, início {}.", fmt::date(d.project.start)))
+            let done = format!("Projeto criado em {path}, início {}.", fmt::date(d.project.start));
+            saved(&mut d, &path, done)
         }
         "ler_projeto" => {
             let (d, _) = open(args)?;
@@ -209,8 +209,8 @@ fn call(name: &str, args: &Value) -> Result<String, String> {
                 }
                 ids.push(d.project.tasks[row].id);
             }
-            d.save(Path::new(&path))?;
-            Ok(format!("Tarefas criadas: ids {ids:?}. Término do projeto: {}.", finish(&d)))
+            let done = format!("Tarefas criadas: ids {ids:?}. Término do projeto: {}.", finish(&d));
+            saved(&mut d, &path, done)
         }
         "editar_tarefa" => {
             let (mut d, path) = open(args)?;
@@ -241,15 +241,15 @@ fn call(name: &str, args: &Value) -> Result<String, String> {
                 Some(false) => d.outdent(row)?,
                 None => {}
             }
-            d.save(Path::new(&path))?;
-            Ok(format!("Tarefa atualizada. Término do projeto: {}.", finish(&d)))
+            let done = format!("Tarefa atualizada. Término do projeto: {}.", finish(&d));
+            saved(&mut d, &path, done)
         }
         "excluir_tarefa" => {
             let (mut d, path) = open(args)?;
             let row = row_of(&d, args["id"].as_i64().ok_or("informe 'id'")?)?;
             d.delete_task(row)?;
-            d.save(Path::new(&path))?;
-            Ok("Tarefa excluída; os ids seguintes foram renumerados.".into())
+            let done = "Tarefa excluída; os ids seguintes foram renumerados.".into();
+            saved(&mut d, &path, done)
         }
         "nivelar_recursos" => {
             let (mut d, path) = open(args)?;
@@ -258,23 +258,32 @@ fn call(name: &str, args: &Value) -> Result<String, String> {
             } else {
                 d.level()?;
             }
-            d.save(Path::new(&path))?;
-            Ok(format!("Pronto. Término do projeto: {}.", finish(&d)))
+            let done = format!("Pronto. Término do projeto: {}.", finish(&d));
+            saved(&mut d, &path, done)
         }
         "definir_linha_de_base" => {
             let (mut d, path) = open(args)?;
             d.save_baseline()?;
-            d.save(Path::new(&path))?;
-            Ok("Linha de base salva.".into())
+            let done = "Linha de base salva.".into();
+            saved(&mut d, &path, done)
         }
         "salvar_como" => {
             let (mut d, _) = open(args)?;
             let dest = text(args, "destino").ok_or("informe 'destino'")?;
-            d.save(Path::new(&dest))?;
-            Ok(format!("Salvo em {dest}."))
+            let done = format!("Salvo em {dest}.");
+            saved(&mut d, &dest, done)
         }
         _ => Err(format!("ferramenta desconhecida: {name}")),
     }
+}
+
+/// Saves and answers `done`, with the notice the save gave, if any (a `.mpp` rebuilt without
+/// Project).
+fn saved(d: &mut Doc, path: &str, done: String) -> Result<String, String> {
+    Ok(match d.save(Path::new(path))? {
+        Some(notice) => format!("{done} {notice}"),
+        None => done,
+    })
 }
 
 fn finish(d: &Doc) -> String {

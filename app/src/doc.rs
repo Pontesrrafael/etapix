@@ -62,17 +62,19 @@ impl Doc {
 
     /// Writes `.mpp` (natively into the original file, or through the installed Project) or Project
     /// XML, by the file's extension.
-    pub fn save(&mut self, path: &Path) -> Result<(), String> {
+    /// Returns a notice for the user when the save had to rebuild the `.mpp`.
+    pub fn save(&mut self, path: &Path) -> Result<Option<String>, String> {
         let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let xml = write_project(&self.project, &self.cals, &self.schedule, &name);
-        if crate::mpp::is_mpp(path) {
-            crate::mpp::write_mpp(path, &xml, self.path.as_deref())?;
+        let notice = if crate::mpp::is_mpp(path) {
+            crate::mpp::write_mpp(path, &xml, self.path.as_deref())?
         } else {
             std::fs::write(path, xml).map_err(|e| format!("{}: {e}", path.display()))?;
-        }
+            None
+        };
         self.path = Some(path.to_path_buf());
         self.dirty = false;
-        Ok(())
+        Ok(notice)
     }
 
     /// Applies `change` and reschedules; a change that cannot be scheduled (a dependency cycle,

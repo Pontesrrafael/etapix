@@ -18,11 +18,18 @@ use crate::model::{Project, Task};
 use crate::mspdi::{parse_datetime, parse_duration, read_project};
 use crate::mspdi_write::{constraint, link_code};
 
+// Keys of the per-table counters in the project's `Props`, plus the table's number.
+const ROW_COUNT: u32 = 0x0100_0000;
+const VAR_SIZE: u32 = 0x0001_0000;
 /// Bytes Project writes for an empty ("NA") date.
 const NA: [u8; 4] = [0xFF; 4];
 /// Remaining duration (tenths of a minute): Project takes the duration as done + remaining.
 const T_REMAINING_DURATION: usize = 88;
 // Flags in a task's FixedMeta item: (byte, bit).
+pub(super) const F_SUMMARY: (usize, u8) = (12, 3);
+/// Manually scheduled: in the FixedMeta item and again in the Fixed2Meta item.
+const F_MANUAL: (usize, u8) = (2, 0);
+const F2_MANUAL: (usize, u8) = (8, 7);
 const F_MILESTONE: (usize, u8) = (10, 1);
 const F_EFFORT_DRIVEN: (usize, u8) = (13, 3);
 const F_LEVELING_CAN_SPLIT: (usize, u8) = (16, 1);
@@ -48,7 +55,7 @@ const C_SPAN: usize = 24;
 const C_SEGMENTS: usize = 32;
 const UNIFORM_CONTOUR_LEN: usize = 72;
 /// The resource of the assignment Project gives a task without resources.
-const PLACEHOLDER_RESOURCE: u32 = -65535i32 as u32;
+pub(super) const PLACEHOLDER_RESOURCE: u32 = -65535i32 as u32;
 // MSPDI duration formats: 7 = days, 8 = elapsed days, 5 = hours.
 const FORMAT_ELAPSED_DAYS: u8 = 8;
 const FORMAT_DAYS: u8 = 7;
@@ -106,8 +113,43 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
         }
     }
     assignments.save(&mut file)?;
+    sync_counts(&mut file)?;
     Ok(file.to_bytes())
 }
+
+/// The project's `Props` keeps, per table, its number of records and the size of its variable
+/// data; Project fails to open a file where they lag behind the tables.
+fn sync_counts(file: &mut cfb::Compound) -> Result<()> {
+    const TABLES: [(u32, &str); 5] = [(1, "TBkndTask"), (2, "TBkndRsc"), (3, "TBkndCal"), (4, "TBkndAssn"), (5, "TBkndCons")];
+    let path = "/   114/Props";
+    let Some(mut props) = file.get(path).map(<[u8]>::to_vec) else { return Ok(()) };
+    for (n, table) in TABLES {
+        let get = |s: &str| file.get(&format!("/   114/{table}/{s}")).map(<[u8]>::len).unwrap_or(0);
+        let rows = file.get(&format!("/   114/{table}/FixedMeta")).map_or(0, |m| u32_at(m, 8));
+        let var = get("Var2Data") as u32;
+        set_prop(&mut props, ROW_COUNT | n, |v| put_u32(v, 0, rows));
+        set_prop(&mut props, VAR_SIZE | n, |v| put_u32(v, 0, var));
+    }
+    file.set(path, props).map_err(|e| MppError(e.0))
+}
+
+/// Changes, in place, every value of entry `key` in a `Props` stream (a key can appear more
+/// than once; readers take the last).
+pub(super) fn set_prop(props: &mut [u8], key: u32, change: impl Fn(&mut [u8])) {
+    let mut o = 16;
+    while o + 12 <= props.len() {
+        let len = u32_at(props, o) as usize;
+        if len > props.len() - o - 12 {
+            return;
+        }
+        if u32_at(props, o + 4) == key && len > 0 {
+            change(&mut props[o + 12..o + 12 + len]);
+        }
+        o += 12 + len;
+    }
+}
+
+
 
 /// Says what Etapix cannot write into the file yet, when the edits include it.
 fn same_structure(before: &Project, after: &Project) -> Result<()> {
@@ -160,7 +202,7 @@ fn same_structure(before: &Project, after: &Project) -> Result<()> {
 
 /// A calendar's working time (names change between saves: Project names a resource's calendar
 /// after it).
-fn working_time(c: &Calendar) -> String {
+pub(super) fn working_time(c: &Calendar) -> String {
     format!("{:?} {:?}", c.weekdays, c.exceptions)
 }
 
@@ -228,7 +270,10 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
             put_date(r2, T2_MANUAL_FINISH, manual.then_some(finish));
         }
     }
+    let manual = new.manual.is_some();
+    set_flag(tasks.item2(at), F2_MANUAL, manual);
     let item = tasks.item(at);
+    set_flag(item, F_MANUAL, manual);
     set_flag(item, F_MILESTONE, new.duration == 0 && !new.summary);
     set_flag(item, F_EFFORT_DRIVEN, new.effort_driven);
     set_flag(item, F_LEVELING_CAN_SPLIT, new.leveling_can_split);
@@ -306,6 +351,8 @@ struct Store {
     var_data: Vec<u8>,
     /// (item in `meta`, record in `data`, second block in `data2`), in file order.
     rows: Vec<(Range<usize>, Range<usize>, Range<usize>)>,
+    /// Each row's item in `meta2`.
+    items2: Vec<Range<usize>>,
 }
 
 impl Store {
@@ -313,8 +360,9 @@ impl Store {
         let get = |s: &str| file.get(&format!("/   114/{name}/{s}")).map(<[u8]>::to_vec).unwrap_or_default();
         let (meta, data, meta2, data2) = (get("FixedMeta"), get("FixedData"), get("Fixed2Meta"), get("Fixed2Data"));
         let second = spans(&meta2, &data2);
-        let rows = spans(&meta, &data).into_iter().enumerate().map(|(k, (item, rec))| (item, rec, second.get(k).map_or(0..0, |s| s.1.clone()))).collect();
-        Store { name: name.into(), meta, data, meta2, data2, var_meta: get("VarMeta"), var_data: get("Var2Data"), rows }
+        let rows: Vec<_> = spans(&meta, &data).into_iter().enumerate().map(|(k, (item, rec))| (item, rec, second.get(k).map_or(0..0, |s| s.1.clone()))).collect();
+        let items2 = (0..rows.len()).map(|k| second.get(k).map_or(0..0, |s| s.0.clone())).collect();
+        Store { name: name.into(), meta, data, meta2, data2, var_meta: get("VarMeta"), var_data: get("Var2Data"), rows, items2 }
     }
 
     fn save(self, file: &mut cfb::Compound) -> Result<()> {
@@ -328,23 +376,21 @@ impl Store {
         Ok(())
     }
 
-    /// The row whose record holds `value` at `offset` (index entries are 16 bytes and skipped).
+    /// The first live record that `matches` (index entries and deleted records are skipped).
+    fn find_live(&self, matches: impl Fn(&[u8]) -> bool) -> Option<usize> {
+        self.rows.iter().position(|(item, r, _)| r.len() > 16 && !is_deleted(&self.meta[item.clone()]) && matches(&self.data[r.clone()]))
+    }
+
     fn find(&self, offset: usize, value: u32) -> Option<usize> {
-        self.rows.iter().position(|(_, r, _)| r.len() > 16 && u32_at(&self.data[r.clone()], offset) == value)
+        self.find_live(|r| u32_at(r, offset) == value)
     }
 
     fn find_link(&self, pred: u32, succ: u32) -> Option<usize> {
-        self.rows.iter().position(|(_, r, _)| {
-            let r = &self.data[r.clone()];
-            r.len() >= 20 && u32_at(r, L_PREDECESSOR) == pred && u32_at(r, L_SUCCESSOR) == succ
-        })
+        self.find_live(|r| r.len() >= 20 && u32_at(r, L_PREDECESSOR) == pred && u32_at(r, L_SUCCESSOR) == succ)
     }
 
     fn find_assignment(&self, task: u32, resource: u32) -> Option<usize> {
-        self.rows.iter().position(|(_, r, _)| {
-            let r = &self.data[r.clone()];
-            r.len() > A_FINISH && u32_at(r, A_TASK) == task && u32_at(r, A_RESOURCE) == resource
-        })
+        self.find_live(|r| r.len() > A_FINISH && u32_at(r, A_TASK) == task && u32_at(r, A_RESOURCE) == resource)
     }
 
     /// Work and dates of an assignment that has not started: all its work is regular and
@@ -389,6 +435,10 @@ impl Store {
         &mut self.meta[self.rows[row].0.clone()]
     }
 
+    fn item2(&mut self, row: usize) -> &mut [u8] {
+        &mut self.meta2[self.items2[row].clone()]
+    }
+
     /// Where `VarMeta` indexes the value of field `ty` of record `uid`.
     fn var_entry(&self, uid: u32, ty: u16) -> Option<usize> {
         let count = u32_at(&self.var_meta, 8) as usize;
@@ -418,26 +468,26 @@ impl Store {
     }
 }
 
-fn put_u16(b: &mut [u8], o: usize, v: u16) {
+pub(super) fn put_u16(b: &mut [u8], o: usize, v: u16) {
     if let Some(s) = b.get_mut(o..o + 2) {
         s.copy_from_slice(&v.to_le_bytes());
     }
 }
 
-fn put_u32(b: &mut [u8], o: usize, v: u32) {
+pub(super) fn put_u32(b: &mut [u8], o: usize, v: u32) {
     if let Some(s) = b.get_mut(o..o + 4) {
         s.copy_from_slice(&v.to_le_bytes());
     }
 }
 
-fn put_f64(b: &mut [u8], o: usize, v: f64) {
+pub(super) fn put_f64(b: &mut [u8], o: usize, v: f64) {
     if let Some(s) = b.get_mut(o..o + 8) {
         s.copy_from_slice(&v.to_le_bytes());
     }
 }
 
 /// The inverse of [`date_at`]: tenths of a minute, then days since 1983-12-31; NA for `None`.
-fn put_date(b: &mut [u8], o: usize, d: Option<NaiveDateTime>) {
+pub(super) fn put_date(b: &mut [u8], o: usize, d: Option<NaiveDateTime>) {
     let Some(s) = b.get_mut(o..o + 4) else { return };
     match d {
         None => s.copy_from_slice(&NA),
@@ -450,7 +500,7 @@ fn put_date(b: &mut [u8], o: usize, d: Option<NaiveDateTime>) {
     }
 }
 
-fn set_flag(item: &mut [u8], (byte, bit): (usize, u8), on: bool) {
+pub(super) fn set_flag(item: &mut [u8], (byte, bit): (usize, u8), on: bool) {
     if let Some(b) = item.get_mut(byte) {
         *b = if on { *b | 1 << bit } else { *b & !(1 << bit) };
     }

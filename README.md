@@ -7,7 +7,7 @@
 | **Windows** 10 ou 11 | [⬇ Etapix-Instalador.exe](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe) | Baixe e dê dois cliques. |
 | **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
 
-Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` abrem em qualquer máquina, sem o Microsoft Project, e as alterações nas tarefas que já existem (nome, duração, prioridade, restrição, prazo, tipo do vínculo) também são salvas no próprio `.mpp` sem ele. Incluir ou excluir tarefas, vínculos, recursos, calendários, andamento ou linha de base ainda exige o Project instalado (Windows) para salvar em `.mpp`; sem ele, salve em Project XML (`.xml`).
+Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` abrem, são criados e salvos em qualquer máquina, sem o Microsoft Project. Alterações nas tarefas que já existem vão direto para o próprio `.mpp`. Ao incluir ou excluir tarefas, vínculos ou recursos num `.mpp` que já existe, o Etapix usa o Project instalado, que mantém também os modos de exibição e formatações feitos nele; sem o Project, o Etapix recria o arquivo e avisa. Andamento, linha de base, recursos materiais, taxas que mudam com o tempo e horas extras ainda precisam do Project para virar `.mpp`; sem ele, salve em Project XML (`.xml`).
 
 Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
@@ -63,10 +63,16 @@ next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associatio
   and everything else (views, formats, custom fields) stays as Project left it. Checked by
   `tests/mpp_update.rs` and, against Project itself, by `examples/mpp_write_check.rs` with
   `tools/mpp_to_xml.ps1`.
-- Structural changes (tasks, links, resources or assignments added or removed, calendars,
-  progress, baseline) still go through the installed Microsoft Project (`app/src/mpp.rs`), which
-  converts Etapix's Project XML invisibly over COM. Either way a save goes to a temporary file
-  first and replaces the target only when it worked. Project XML (`.xml`) needs no Project.
+- New `.mpp` files are native as well (`src/mpp/create.rs`): Etapix clones the records of a
+  template Project made (`assets/modelo.mpp`, built by `tools/mpp_template.ps1`) for every task,
+  link, resource, calendar and assignment, ties them together with their GUIDs, and lets the edit
+  writer fill in the fields. Checked by `tests/mpp_create.rs` and by
+  `examples/mpp_write_check.rs prepare-new` against Project.
+- Structural changes to an existing file (tasks, links, resources or assignments added or
+  removed) go through the installed Microsoft Project (`app/src/mpp.rs`), which converts Etapix's
+  Project XML invisibly over COM and keeps the rest of the file; without Project the file is
+  rebuilt from the template, with a notice. Either way a save goes to a temporary file first and
+  replaces the target only when it worked. Project XML (`.xml`) needs no Project.
 - Grid: mode, name (indented by outline level), duration ("3 dias"), start and finish
   ("Qui 22/10/26"), predecessors and resource names. Type into an empty row to add a task. Type
   over a cell or press F2 to edit; Enter, Tab and Escape behave as in Project. Every edit

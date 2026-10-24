@@ -526,8 +526,10 @@ impl App {
                 .save_file(),
         };
         if let Some(p) = path {
-            let r = self.doc.save(&p);
-            self.report(r);
+            match self.doc.save(&p) {
+                Ok(notice) => self.message = notice,
+                Err(e) => self.message = Some(e),
+            }
         }
     }
 
@@ -1171,7 +1173,7 @@ impl App {
                 acts.push(Act::HelpCenter);
             }
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Os arquivos .mpp são lidos e atualizados pelo próprio Etapix; incluir ou excluir tarefas, vínculos e recursos usa o Microsoft Project instalado.").color(Color32::from_gray(110)));
+            ui.label(egui::RichText::new("Os arquivos .mpp são lidos, criados e salvos pelo próprio Etapix; num .mpp existente, inclusões e exclusões usam o Microsoft Project instalado, se houver.").color(Color32::from_gray(110)));
         });
         acts
     }

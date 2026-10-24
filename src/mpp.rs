@@ -27,7 +27,9 @@ use chrono::{Duration, NaiveDate, NaiveDateTime};
 
 use crate::cfb;
 
+mod create;
 mod update;
+pub use create::create_mpp;
 pub use update::update_mpp;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,13 +168,21 @@ fn table(streams: &BTreeMap<String, Vec<u8>>, name: &str) -> Table {
 }
 
 impl Table {
-    /// Records with a unique id (the real rows: index entries are 16 bytes long).
+    /// The live records: not index entries (16 bytes long) and not deleted ones, which Project
+    /// keeps in the file with their item marked.
     fn entities(&self) -> impl Iterator<Item = &(Vec<u8>, Vec<u8>, Vec<u8>)> {
-        self.rows.iter().filter(|(_, r, _)| r.len() > 16)
+        self.rows.iter().filter(|(item, r, _)| r.len() > 16 && !is_deleted(item))
     }
     fn text(&self, uid: u32, ty: u16) -> Option<String> {
         self.var.get(&(uid, ty)).map(|v| utf16(v))
     }
+}
+
+/// A FixedMeta item's first byte: 0 for a live record, 2 for a deleted one, 4 for an index entry.
+const ITEM_DELETED: u8 = 2;
+
+fn is_deleted(item: &[u8]) -> bool {
+    u8_at(item, 0) == ITEM_DELETED
 }
 
 fn props(p: &[u8]) -> HashMap<u32, Vec<u8>> {
@@ -335,7 +345,7 @@ fn project_calendar(mpp: &Mpp, calendars: &[CalendarRow]) -> Result<u32> {
 /// For a resource calendar without a recorded base: the base calendar named after the
 /// resource that uses it (Project names a resource's own base that way), else the project's.
 fn implied_base(mpp: &Mpp, calendars: &[CalendarRow], uid: u32, project_calendar: u32) -> i32 {
-    let owner = mpp.resources.entities().find(|(_, r, _)| i32_at(r, 154) == uid as i32).and_then(|(_, r, _)| mpp.resources.text(u32_at(r, 0), 1));
+    let owner = mpp.resources.entities().find(|(_, r, _)| i32_at(r, 154) == uid as i32).and_then(|(_, r, _)| mpp.resources.text(u32_at(r, R_UID), 1));
     owner
         .and_then(|name| calendars.iter().find(|c| c.resource.is_none() && calendar_name(mpp, c.uid).as_deref() == Some(name.as_str())))
         .map_or(project_calendar as i32, |c| c.uid as i32)
@@ -552,8 +562,8 @@ fn write_baseline(x: &mut String, tasks: &Table, uid: u32) {
 }
 
 // Resource record layout.
-const R_UID: usize = 0;
-const R_ID: usize = 4;
+const R_UID: usize = 4;
+const R_ID: usize = 0;
 const R_MAX_UNITS: usize = 8;
 const R_STANDARD_RATE: usize = 16;
 const R_OVERTIME_RATE: usize = 24;

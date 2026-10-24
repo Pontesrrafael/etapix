@@ -3,10 +3,13 @@
 //! - Reading is native ([`pjsched::mpp::mpp_to_mspdi`]): no Microsoft Project needed, on Windows
 //!   or Linux. Only if the native reader cannot make sense of a file does Etapix fall back to the
 //!   installed Project (Windows).
-//! - Writing is native too when the project comes from a `.mpp` ([`pjsched::mpp::update_mpp`]):
-//!   Etapix's edits go into that file's own tables. Changes the native writer cannot make yet
-//!   (new tasks, links, resources...) go through the installed Project: it opens Etapix's Project
-//!   XML through its documented COM object model, invisibly, and saves it as `.mpp`.
+//! - Writing is native too. Edits to a project opened from a `.mpp` go into that file's own
+//!   tables ([`pjsched::mpp::update_mpp`]); a new file is made from Etapix's template
+//!   ([`pjsched::mpp::create_mpp`]). Changes an existing file cannot take natively (new tasks,
+//!   links, resources...) go through the installed Project, which keeps everything else in the
+//!   file: it opens Etapix's Project XML through its documented COM object model, invisibly, and
+//!   saves it as `.mpp`. Without Project, the file is rebuilt from the template, and the user is
+//!   told what that leaves out.
 //! - Either way the new file is written next to the target first and replaces it only on
 //!   success, so a failed save never damages the existing file.
 //! - If Project is already open, the conversion runs in that instance (COM attaches to it) and
@@ -167,32 +170,49 @@ fn read_through_project(path: &Path) -> Result<String, String> {
     text
 }
 
-/// Writes Project XML text as a `.mpp` file, replacing `path` only once the save worked: natively
-/// into `path` itself, or into a copy of `source` (the `.mpp` the project was opened from) when
-/// `path` is new; through Project when the native writer cannot.
-pub fn write_mpp(path: &Path, xml: &str, source: Option<&Path>) -> Result<(), String> {
+/// Writes Project XML text as a `.mpp` file, replacing `path` only once the save worked. In order:
+/// natively into the existing file (`path`, or `source`, the `.mpp` the project was opened from,
+/// when `path` is new); through the installed Project, which keeps everything else in the file;
+/// and natively from the template, which keeps every field Etapix shows but not Project's own
+/// views and formats. Returns a notice for the user when it had to rebuild the file.
+pub fn write_mpp(path: &Path, xml: &str, source: Option<&Path>) -> Result<Option<String>, String> {
     let base = if path.exists() { Some(path) } else { source.filter(|s| is_mpp(s) && s.exists()) };
-    let native = match base {
-        Some(base) => write_native(base, path, xml),
-        None => Err("o projeto não veio de um arquivo .mpp".into()),
+    let Some(base) = base else {
+        // A new file: the template is the native way, Project the fallback.
+        return write_native(path, pjsched::mpp::create_mpp(xml)).or_else(|why| through_project_or(path, xml, &why)).map(|()| None);
     };
-    native.or_else(|why| {
-        write_through_project(path, xml).map_err(|com| {
-            if com.contains("não foi encontrado") || cfg!(not(windows)) {
-                format!(
-                    "não foi possível gravar direto no .mpp ({why}), e o Microsoft Project, que gravaria essa alteração,                      não está disponível nesta máquina. Salve em Project XML (.xml): o Project abre esse formato."
-                )
-            } else {
-                com
-            }
-        })
-    })
+    let original = std::fs::read(base).map_err(|e| format!("{}: {e}", base.display()))?;
+    let Err(why) = write_native(path, pjsched::mpp::update_mpp(&original, xml)) else { return Ok(None) };
+    match write_through_project(path, xml) {
+        Ok(()) => Ok(None),
+        Err(com) if !project_missing(&com) => Err(com),
+        Err(_) => write_native(path, pjsched::mpp::create_mpp(xml)).map(|()| Some(REBUILT.into())).map_err(|rebuild| missing_project(&format!("{why}; {rebuild}"))),
+    }
 }
 
-/// Saves `xml` into a copy of the `.mpp` at `base`, as `path`.
-fn write_native(base: &Path, path: &Path, xml: &str) -> Result<(), String> {
-    let original = std::fs::read(base).map_err(|e| format!("{}: {e}", base.display()))?;
-    let bytes = pjsched::mpp::update_mpp(&original, xml).map_err(|e| e.0)?;
+const REBUILT: &str = "O .mpp foi salvo, recriado pelo Etapix: o Microsoft Project, que gravaria essa alteração no \
+                       arquivo original, não está disponível nesta máquina. Tarefas, vínculos, recursos, atribuições e \
+                       calendários estão no arquivo; modos de exibição e formatações feitos no Project, não.";
+
+fn project_missing(com: &str) -> bool {
+    com.contains("não foi encontrado") || cfg!(not(windows))
+}
+
+fn missing_project(why: &str) -> String {
+    format!(
+        "não foi possível gravar direto no .mpp ({why}), e o Microsoft Project, que gravaria essa alteração, \
+         não está disponível nesta máquina. Salve em Project XML (.xml): o Project abre esse formato."
+    )
+}
+
+/// Saves through Project, or explains what the native writer could not do when Project is missing.
+fn through_project_or(path: &Path, xml: &str, why: &str) -> Result<(), String> {
+    write_through_project(path, xml).map_err(|com| if project_missing(&com) { missing_project(why) } else { com })
+}
+
+/// Writes the `.mpp` the native writer made as `path`, replacing it only once it is complete.
+fn write_native(path: &Path, made: Result<Vec<u8>, pjsched::mpp::MppError>) -> Result<(), String> {
+    let bytes = made.map_err(|e| e.0)?;
     let file_name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let partial = path.with_file_name(format!(".{file_name}.etapix-tmp"));
     std::fs::write(&partial, bytes).map_err(|e| format!("{}: {e}", partial.display()))?;
@@ -245,8 +265,8 @@ mod tests {
         eprintln!("{err}");
     }
 
-    /// Without Project, edits save natively into the `.mpp`; a change the native writer cannot
-    /// make yet is refused with a way out, and leaves the file as it was.
+    /// Without Project: edits save natively into the `.mpp`; a change the edit cannot hold (a new
+    /// task) rebuilds the file from the template, with a notice; a new project saves as a new file.
     #[test]
     fn saves_without_project() {
         let _only = NO_PROJECT.lock().unwrap_or_else(|e| e.into_inner());
@@ -262,18 +282,23 @@ mod tests {
         })
         .unwrap();
         let edited = doc.save(&file);
+        let edited_xml = super::read_mpp(&file);
         doc.apply(|p| {
             p.tasks.push(pjsched::model::Task::new(99, 99, "Nova", 480));
             Ok(())
         })
         .unwrap();
-        let before = std::fs::read(&file).unwrap();
-        let refused = doc.save(&file);
+        let rebuilt = doc.save(&file);
+        let rebuilt_xml = super::read_mpp(&file);
+        let new_file = dir.join("novo.mpp");
+        let _ = std::fs::remove_file(&new_file);
+        let created = crate::doc::Doc::blank().save(&new_file);
         std::env::remove_var("ETAPIX_PROJECT_PROGID");
-        edited.unwrap();
-        assert!(super::read_mpp(&file).unwrap().contains("<Name>A editada</Name>"));
-        let err = refused.unwrap_err();
-        assert!(err.contains("tarefas incluídas") && err.contains("Project XML (.xml)"), "{err}");
-        assert_eq!(std::fs::read(&file).unwrap(), before);
+        assert_eq!(edited, Ok(None));
+        assert!(edited_xml.unwrap().contains("<Name>A editada</Name>"));
+        assert!(rebuilt.unwrap().is_some_and(|n| n.contains("recriado")));
+        assert!(rebuilt_xml.unwrap().contains("<Name>Nova</Name>"));
+        assert_eq!(created, Ok(None));
+        assert!(super::read_mpp(&new_file).is_ok());
     }
 }
