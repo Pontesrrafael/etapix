@@ -57,11 +57,17 @@ const TV_LINKED: u16 = 0x4E5;
 const LINKED: [u8; 8] = [1, 0, 0, 0, 1, 0, 0xFF, 0xFF];
 /// Entry flags of a task's variable data.
 const TASK_VAR_FLAGS: u16 = 0x0B40;
+/// A cost resource's FixedMeta item carries this bit (byte 13), and its Fixed2Meta item this one;
+/// its record says so at 170 and has none of a work resource's default amounts.
+const RESOURCE_COST_ITEM_FLAG: (usize, u8) = (13, 0);
+const RESOURCE_COST_ITEM2_FLAG: (usize, u8) = (8, 4);
+const R_IS_COST: usize = 170;
+const R_WORK_DEFAULTS: [usize; 3] = [48, 90, 106];
+/// Set on a work resource's item (byte 12) only.
+const RESOURCE_NOT_WORK_FLAG: (usize, u8) = (12, 2);
 const L_UID: usize = 0;
 const L_PREDECESSOR: usize = 4;
 const L_SUCCESSOR: usize = 8;
-/// Work resources carry this bit in byte 12 of their item.
-const RESOURCE_WORK_FLAG: u8 = 0x10;
 
 /// A new `.mpp` holding the project of `xml` (Project XML, as Etapix writes it).
 pub fn create_mpp(xml: &str) -> Result<Vec<u8>> {
@@ -109,9 +115,6 @@ fn check_supported(p: &Project) -> Result<()> {
     let unsupported = |what: &str| err(format!("{what}: um .mpp novo com isso ainda precisa do Microsoft Project"));
     if p.resources.iter().any(|r| r.rates.len() > 1) {
         return unsupported("recurso com taxas que mudam com o tempo");
-    }
-    if p.resources.iter().any(|r| r.kind == ResourceKind::Cost) {
-        return unsupported("recurso de custo");
     }
     if p.assignments.iter().any(|a| a.overtime_work > 0) {
         return unsupported("horas extras");
@@ -568,6 +571,17 @@ fn build_resources(file: &mut cfb::Compound, p: &Project, guids: &Guids, calenda
             put_u32(&mut row.record, R_CALENDAR, calendars.resources[&r.uid]);
             if let Some(b) = row.item.get_mut(12) {
                 *b = if r.kind == ResourceKind::Work { *b | RESOURCE_WORK_FLAG } else { *b & !RESOURCE_WORK_FLAG };
+            }
+            row.record[R_KIND] = if r.kind == ResourceKind::Material { R_KIND_MATERIAL } else { R_KIND_OTHER };
+            set_flag(&mut row.item, RESOURCE_NOT_WORK_FLAG, r.kind == ResourceKind::Work);
+            if r.kind == ResourceKind::Cost {
+                // A cost resource: flagged in its record and items, without the work defaults.
+                row.record[R_IS_COST] = 1;
+                set_flag(&mut row.item, RESOURCE_COST_ITEM_FLAG, true);
+                set_flag(&mut row.item2, RESOURCE_COST_ITEM2_FLAG, true);
+                for o in R_WORK_DEFAULTS {
+                    put_f64(&mut row.record, o, 0.0);
+                }
             }
             set_var(&mut row.vars, RV_NAME, utf16z(&r.name));
             row

@@ -158,12 +158,15 @@ pub struct Assignment {
     /// Part of the work done as overtime (minutes), charged at the overtime rate.
     pub overtime_work: Wm,
     pub profile: Vec<Piece>,
+    /// What a cost resource charges on this task (currency); zero for other resources, whose
+    /// cost comes from their rates.
+    pub cost: f64,
 }
 
 impl Assignment {
     /// An assignment working `len` minutes at `rate` from the task start.
     pub fn uniform(task: usize, resource: usize, units: f64, len: Wm, rate: f64) -> Self {
-        Assignment { task, resource, units, offset: 0, overtime_work: 0, profile: vec![Piece { len, rate }] }
+        Assignment { task, resource, units, offset: 0, overtime_work: 0, profile: vec![Piece { len, rate }], cost: 0.0 }
     }
 
     /// Work in minutes.

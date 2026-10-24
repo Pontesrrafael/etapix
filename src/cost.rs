@@ -59,7 +59,7 @@ pub fn costs(project: &Project, cals: &Calendars, schedule: &[TaskSchedule]) -> 
                 }
                 cost + a.overtime_work as f64 / 60.0 * first.overtime + first.per_use
             }
-            ResourceKind::Cost => 0.0,
+            ResourceKind::Cost => a.cost,
         };
         assignment.push(cost);
     }

@@ -93,6 +93,11 @@ const DONE_CONTOUR_LEN: usize = 56;
 const DONE_SEGMENT_LEN: u16 = 0x18;
 const DONE_TAIL: usize = 36;
 const A_ACTUAL_WORK: usize = 28;
+/// A cost resource's assignment: its amount at `A_COST` (cents) and again here, and the token
+/// units and work Project gives it.
+const A_REMAINING_COST: usize = 84;
+const COST_TOKEN_UNITS: f64 = 6.0;
+const COST_TOKEN_WORK: f64 = 3000.0;
 /// An assignment with work done carries both flags in its FixedMeta item.
 const A_WORK_DONE_FLAGS: [(usize, u8); 2] = [(10, 3), (14, 2)];
 const C_FIRST: usize = 8;
@@ -154,6 +159,10 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
         let at = assignments.find_assignment(a.task, a.resource).ok_or_else(|| MppError("atribuição não encontrada no .mpp".into()))?;
         let material = after.resources.iter().any(|r| r.uid == a.resource as i64 && r.kind == crate::model::ResourceKind::Material);
         let span = pairs.get(&(a.task as i64)).map_or(0, |(_, t)| t.duration) as f64;
+        if let Some(cost) = a.cost {
+            assignments.write_cost_assignment(at, a, cost, span);
+            continue;
+        }
         let a = if material { a.as_material(span) } else { a.clone() };
         assignments.write_assignment(at, &a)?;
     }
@@ -436,12 +445,14 @@ struct AssignmentDates {
     /// For a material resource, the task's duration (working minutes): its "work" is a quantity,
     /// spread over the task.
     material_span: Option<f64>,
+    /// What a cost resource charges (currency), for a cost resource's assignment.
+    cost: Option<f64>,
 }
 
 impl AssignmentDates {
     /// An assignment that has not started: all its work remains, from its start.
     fn unstarted(task: u32, resource: u32, units: f64, work: f64, start: NaiveDateTime, finish: NaiveDateTime) -> Self {
-        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None }
+        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None, cost: None }
     }
 
     /// The assignment of a material resource on a task of `span` working minutes: its work is a
@@ -495,6 +506,7 @@ impl Dates {
                     stop,
                     resume,
                     material_span: None,
+                    cost: n.children().find(|c| c.has_tag_name("Cost")).and_then(|c| c.text()).and_then(|c| c.parse::<f64>().ok()).map(|cents| cents / 100.0),
                 });
             }
         }
@@ -644,6 +656,32 @@ impl Store {
             self.set_or_add_var(uid, AV_DONE_CONTOUR, ASSIGNMENT_VAR_FLAGS, done);
         }
         Ok(())
+    }
+
+    /// A cost resource's assignment as Project keeps it: the amount (cents) as cost and remaining
+    /// cost, token units and work, and a cost contour (the amount over the task's `span` minutes).
+    fn write_cost_assignment(&mut self, row: usize, a: &AssignmentDates, cost: f64, span: f64) {
+        let r = self.record(row);
+        let uid = u32_at(r, A_UID);
+        put_date(r, A_START, Some(a.start));
+        put_date(r, A_FINISH, Some(a.finish));
+        put_date(r, A_STOP, Some(a.start));
+        put_date(r, A_RESUME, Some(a.start));
+        put_f64(r, A_COST, cost * 100.0);
+        put_f64(r, A_REMAINING_COST, cost * 100.0);
+        put_f64(r, A_UNITS, COST_TOKEN_UNITS);
+        for o in [A_WORK, A_REGULAR_WORK, A_REMAINING_WORK] {
+            put_f64(r, o, COST_TOKEN_WORK);
+        }
+        let mut contour = vec![0u8; UNIFORM_CONTOUR_LEN];
+        put_u16(&mut contour, 0, 1);
+        put_u16(&mut contour, 2, 0x20);
+        put_u32(&mut contour, 4, C_TAIL as u32);
+        put_f64(&mut contour, C_FIRST, cost);
+        put_f64(&mut contour, C_FIRST + 8, COST_TOKEN_WORK);
+        put_u32(&mut contour, C_FIRST + 16, span_code(span));
+        contour[C_TAIL..].copy_from_slice(&closing_copy(cost, COST_TOKEN_WORK / 1000.0, span));
+        self.set_or_add_var(uid, AV_CONTOUR, ASSIGNMENT_VAR_FLAGS, contour);
     }
 
     fn record(&mut self, row: usize) -> &mut [u8] {

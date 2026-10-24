@@ -570,6 +570,12 @@ const R_OVERTIME_RATE: usize = 24;
 const R_COST_PER_USE: usize = 72;
 const R_CALENDAR: usize = 154;
 const RV_NAME: u16 = 0x01;
+/// Item flag of a work resource (byte 12).
+pub(crate) const RESOURCE_WORK_FLAG: u8 = 0x10;
+/// The record's kind byte: 0x08 for a material, 0x02 for work and cost resources.
+pub(crate) const R_KIND: usize = 166;
+pub(crate) const R_KIND_MATERIAL: u8 = 0x08;
+pub(crate) const R_KIND_OTHER: u8 = 0x02;
 /// Cost rate table A, when its rates change over time.
 const RV_RATE_TABLE: u16 = 0x3D;
 
@@ -577,8 +583,12 @@ fn write_resources(x: &mut String, mpp: &Mpp, calendars: &[CalendarRow]) {
     x.push_str("<Resources>");
     for (item, r, _) in mpp.resources.entities() {
         let uid = u32_at(r, R_UID);
-        // Work resources carry flag 0x10 in their index item; material ones do not.
-        let kind = if u8_at(item, 12) & 0x10 != 0 { 1 } else { 0 };
+        // Work resources carry flag 0x10 in their index item; of the others, materials are marked
+        // in the record's kind byte, and the rest are cost resources (which Project XML writes as
+        // type 0 flagged IsCostResource).
+        let work = u8_at(item, 12) & RESOURCE_WORK_FLAG != 0;
+        let kind = if work { 1 } else { 0 };
+        let cost = !work && u8_at(r, R_KIND) & R_KIND_MATERIAL == 0;
         let calendar = i32_at(r, R_CALENDAR);
         let known = calendars.iter().any(|c| c.uid as i32 == calendar);
         let _ = write!(
@@ -594,6 +604,9 @@ fn write_resources(x: &mut String, mpp: &Mpp, calendars: &[CalendarRow]) {
             f64_at(r, R_COST_PER_USE),
             if calendar > 0 && known { calendar } else { -1 },
         );
+        if cost {
+            x.push_str("<IsCostResource>1</IsCostResource>");
+        }
         if let Some(table) = mpp.resources.var.get(&(uid, RV_RATE_TABLE)) {
             write_rates(x, table);
         }
@@ -636,6 +649,8 @@ const A_RESOURCE: usize = 8;
 const A_UNITS: usize = 12;
 const A_WORK: usize = 20;
 const A_START: usize = 52;
+/// The amount a cost resource charges (cents); Project keeps it again at 84 as remaining cost.
+const A_COST: usize = 68;
 const A_FINISH: usize = 56;
 
 fn write_assignments(x: &mut String, mpp: &Mpp) {
@@ -645,14 +660,15 @@ fn write_assignments(x: &mut String, mpp: &Mpp) {
         let _ = write!(
             x,
             "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID><Units>{}</Units><Work>{}</Work>\
-             <Start>{}</Start><Finish>{}</Finish></Assignment>",
+             <Start>{}</Start><Finish>{}</Finish><Cost>{}</Cost></Assignment>",
             u32_at(r, A_UID),
             u32_at(r, A_TASK),
             i32_at(r, A_RESOURCE),
             f64_at(r, A_UNITS) / 10000.0,
             minutes_duration(f64_at(r, A_WORK) / 1000.0),
             iso(start),
-            iso(finish)
+            iso(finish),
+            f64_at(r, A_COST)
         );
     }
     x.push_str("</Assignments>");

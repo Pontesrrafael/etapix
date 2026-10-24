@@ -21,7 +21,7 @@ pub fn describe(p: &Project) -> Vec<String> {
         out.push(format!("resource {} '{}' {:?} rates {:?} max {} cal '{}'", r.uid, r.name, r.kind, r.rates, r.max_units, cal(r.calendar.or(Some(p.calendar)))));
     }
     for a in &p.assignments {
-        out.push(format!("assignment task {} res {} units {} offset {} work {:.1}", a.task, a.resource, a.units, a.offset, a.work()));
+        out.push(format!("assignment task {} res {} units {} offset {} work {:.1} cost {}", a.task, a.resource, a.units, a.offset, a.work(), a.cost));
     }
     out
 }

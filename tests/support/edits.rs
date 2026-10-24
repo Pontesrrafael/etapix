@@ -88,3 +88,21 @@ pub fn baseline(p: &mut Project) {
     let costs = pjsched::cost::costs(p, &cals, &schedule);
     pjsched::tracking::save_baseline(p, &cals, &schedule, &costs);
 }
+
+/// A cost resource (a trip) charging 500 on the first task that is not a summary.
+#[allow(dead_code)] // not every test binary uses every edit set
+pub fn add_cost(p: &mut Project) {
+    let Some(task) = p.tasks.iter().position(|t| !t.summary) else { return };
+    let uid = p.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
+    p.resources.push(pjsched::model::Resource {
+        uid,
+        name: "Viagem".into(),
+        kind: pjsched::model::ResourceKind::Cost,
+        rates: vec![pjsched::model::Rate { from: p.start, standard: 0.0, overtime: 0.0, per_use: 0.0 }],
+        max_units: 1.0,
+        calendar: None,
+    });
+    let mut a = pjsched::model::Assignment::uniform(task, p.resources.len() - 1, 0.0, p.tasks[task].duration, 0.0);
+    a.cost = 500.0;
+    p.assignments.push(a);
+}

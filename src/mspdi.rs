@@ -471,9 +471,10 @@ pub fn read_project(xml: &str) -> Result<Project> {
             continue; // UID 0 is Project's placeholder resource
         }
         res_index.insert(uid, resources.len());
-        let kind = match text(node, "Type") {
-            Some("0") => ResourceKind::Material,
-            Some("2") => ResourceKind::Cost,
+        // Project writes a cost resource as type 0 (material) flagged IsCostResource.
+        let kind = match (text(node, "Type"), text(node, "IsCostResource")) {
+            (Some("2"), _) | (_, Some("1")) => ResourceKind::Cost,
+            (Some("0"), _) => ResourceKind::Material,
             _ => ResourceKind::Work,
         };
         resources.push(Resource {
@@ -495,14 +496,21 @@ pub fn read_project(xml: &str) -> Result<Project> {
         let (Some(&task), Some(&resource)) = (index.get(&task_uid), res_index.get(&res_uid)) else {
             continue; // unassigned placeholder rows
         };
-        let mut a = Assignment::uniform(task, resource, float(node, "Units")?, 0, 0.0);
+        // A cost resource's assignment has no units: it carries an amount (in cents).
+        let cost_resource = resources[resource].kind == ResourceKind::Cost;
+        let units = if text(node, "Units").is_some() && !cost_resource { float(node, "Units")? } else { 0.0 };
+        let mut a = Assignment::uniform(task, resource, units, 0, 0.0);
         a.overtime_work = text(node, "OvertimeWork").map(parse_duration).transpose()?.unwrap_or(0);
+        if cost_resource {
+            a.cost = text(node, "Cost").and_then(|c| c.parse::<f64>().ok()).unwrap_or(0.0) / 100.0;
+        }
         assignments.push(a);
         timing.push((
             parse_datetime(req(task_nodes[task], "Start")?)?,
             parse_datetime(req(node, "Start")?)?,
             parse_datetime(req(node, "Finish")?)?,
-            parse_duration(req(node, "Work")?)? as f64,
+            // A cost resource does no work (Project stores a token amount there).
+            if cost_resource { 0.0 } else { parse_duration(req(node, "Work")?)? as f64 },
             // Actual (2) and remaining (1) work per stretch, when present.
             children(node, "TimephasedData")
                 .filter(|t| matches!(text(*t, "Type"), Some("1" | "2")))

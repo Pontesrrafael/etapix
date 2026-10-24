@@ -393,14 +393,14 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             "<Resource><UID>{}</UID><ID>{}</ID><Name>{}</Name><Type>{}</Type><MaxUnits>{:.2}</MaxUnits>\
              <StandardRate>{}</StandardRate><StandardRateFormat>{}</StandardRateFormat>\
              <OvertimeRate>{}</OvertimeRate><OvertimeRateFormat>2</OvertimeRateFormat>\
-             <CostPerUse>{}</CostPerUse><CalendarUID>{}</CalendarUID>{}</Resource>",
+             <CostPerUse>{}</CostPerUse><CalendarUID>{}</CalendarUID>{}{}</Resource>",
             res.uid,
             r + 1,
             esc(&res.name),
+            // A cost resource as Project writes it: type 0, flagged IsCostResource (below).
             match res.kind {
-                ResourceKind::Material => 0,
+                ResourceKind::Material | ResourceKind::Cost => 0,
                 ResourceKind::Work => 1,
-                ResourceKind::Cost => 2,
             },
             res.max_units,
             first.standard,
@@ -408,6 +408,7 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
             first.overtime,
             (first.per_use * 100.0).round(),
             first_resource_cal + r,
+            if res.kind == ResourceKind::Cost { "<IsCostResource>1</IsCostResource>" } else { "" },
             rates,
         );
     }
@@ -439,9 +440,14 @@ pub fn write_project(project: &Project, cals: &Calendars, schedule: &[TaskSchedu
         } else {
             String::new()
         };
+        let cost = if project.resources[a.resource].kind == ResourceKind::Cost {
+            format!("<Cost>{}</Cost>", (a.cost * 100.0).round())
+        } else {
+            String::new()
+        };
         let _ = write!(
             out,
-            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>{started}             <Finish>{}</Finish><OvertimeWork>{}</OvertimeWork><RegularWork>{}</RegularWork><RemainingOvertimeWork>{}</RemainingOvertimeWork><RemainingWork>{}</RemainingWork><Start>{}</Start>{dates}             <Units>{}</Units><Work>{}</Work>{tp}</Assignment>",
+            "<Assignment><UID>{}</UID><TaskUID>{}</TaskUID><ResourceUID>{}</ResourceUID>{started}{cost}             <Finish>{}</Finish><OvertimeWork>{}</OvertimeWork><RegularWork>{}</RegularWork><RemainingOvertimeWork>{}</RemainingOvertimeWork><RemainingWork>{}</RemainingWork><Start>{}</Start>{dates}             <Units>{}</Units><Work>{}</Work>{tp}</Assignment>",
             k + 1,
             project.tasks[a.task].uid,
             project.resources[a.resource].uid,
