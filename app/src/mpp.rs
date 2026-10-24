@@ -265,8 +265,8 @@ mod tests {
         eprintln!("{err}");
     }
 
-    /// Without Project: edits save natively into the `.mpp`; a change the edit cannot hold (a new
-    /// task) rebuilds the file from the template, with a notice; a new project saves as a new file.
+    /// Without Project: edits, and a new task, save natively into the `.mpp` itself, with no notice
+    /// (nothing of the file is lost); a new project saves as a new file.
     #[test]
     fn saves_without_project() {
         let _only = NO_PROJECT.lock().unwrap_or_else(|e| e.into_inner());
@@ -288,16 +288,16 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let rebuilt = doc.save(&file);
-        let rebuilt_xml = super::read_mpp(&file);
+        let added = doc.save(&file);
+        let added_xml = super::read_mpp(&file);
         let new_file = dir.join("novo.mpp");
         let _ = std::fs::remove_file(&new_file);
         let created = crate::doc::Doc::blank().save(&new_file);
         std::env::remove_var("ETAPIX_PROJECT_PROGID");
         assert_eq!(edited, Ok(None));
         assert!(edited_xml.unwrap().contains("<Name>A editada</Name>"));
-        assert!(rebuilt.unwrap().is_some_and(|n| n.contains("recriado")));
-        assert!(rebuilt_xml.unwrap().contains("<Name>Nova</Name>"));
+        assert_eq!(added, Ok(None));
+        assert!(added_xml.unwrap().contains("<Name>Nova</Name>"));
         assert_eq!(created, Ok(None));
         assert!(super::read_mpp(&new_file).is_ok());
     }
