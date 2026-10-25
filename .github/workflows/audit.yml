@@ -1,0 +1,35 @@
+name: Dependências
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Auditoria de dependências Rust
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      # O arquivo local fixa o host Windows GNU; no Ubuntu usamos o host nativo.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Instalar Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Instalar cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Auditar o Cargo.lock do workspace
+        run: cargo audit --file Cargo.lock

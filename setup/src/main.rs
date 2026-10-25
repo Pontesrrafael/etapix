@@ -25,6 +25,13 @@ use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 const APP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix.exe"));
 const MCP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix-mcp.exe"));
 const MCPB: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../dist/etapix.mcpb"));
+/// The licenses travel with the programs: Etapix's own and the notices of the libraries and
+/// fonts built into it (`tools/third_party_notices.py`).
+const LICENSES: [(&str, &[u8]); 3] = [
+    ("LICENSE-MIT.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-MIT"))),
+    ("LICENSE-APACHE.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-APACHE"))),
+    ("THIRD-PARTY-NOTICES.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../THIRD-PARTY-NOTICES.txt"))),
+];
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\etapix";
 
@@ -141,6 +148,9 @@ fn install() -> Result<PathBuf, String> {
     }
     for (name, bytes) in [("etapix-mcp.exe", MCP), ("etapix.mcpb", MCPB)] {
         write_in_use(&dir, name, bytes)?;
+    }
+    for (name, bytes) in LICENSES {
+        std::fs::write(dir.join(name), bytes).map_err(|e| format!("{name}: {e}"))?;
     }
     create_shortcut(&exe, &shortcut())?;
     register(&dir, &uninstaller)?;

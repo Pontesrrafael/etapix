@@ -76,7 +76,7 @@ fn handle(msg: &Value) -> Option<Value> {
 
 const INSTRUCTIONS: &str = "Etapix: cronogramas compatíveis com o Microsoft Project. Use caminhos absolutos. \
 Crie com criar_projeto, adicione tarefas com adicionar_tarefas (nivel 1 = topo; uma tarefa seguida de outras com nivel maior vira resumo), \
-confira datas e caminho crítico com ler_projeto. Arquivos .mpp e .xml abrem, são criados e salvos sem o Microsoft Project.";
+confira datas e caminho crítico com ler_projeto. Arquivos .mpp e .xml abrem, são criados e salvos sem o Microsoft Project. Privacidade: o Etapix não envia nada pela internet; ao usar o conector, o conteúdo do cronograma (nomes de tarefas, recursos — que podem ser nomes de pessoas —, datas, custos) é enviado pelo assistente (Claude/Codex) aos servidores do fornecedor, possivelmente fora do Brasil; use só se a política da sua empresa permitir e evite dados pessoais desnecessários.";
 
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "Caminho absoluto do arquivo do projeto (.xml ou .mpp)." });

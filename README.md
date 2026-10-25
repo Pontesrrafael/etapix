@@ -11,6 +11,12 @@ Os dois instalam o Etapix só para o seu usuário, sem administrador, e registra
 
 Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
+## Privacidade
+
+O Etapix não envia nada pela internet. Ao usar o conector, o conteúdo do cronograma (nomes de tarefas, recursos — que podem ser nomes de pessoas —, datas, custos) é enviado pelo assistente (Claude/Codex) aos servidores do fornecedor, possivelmente fora do Brasil; use só se a política da sua empresa permitir e evite dados pessoais desnecessários.
+
+O Etapix é distribuído sob `LICENSE-MIT` e `LICENSE-APACHE`; os avisos e licenças de dependências de terceiros estão em `THIRD-PARTY-NOTICES.txt`.
+
 ## pjsched
 
 A clean-room scheduling engine (critical path and resource leveling) written in Rust. Its behavior
@@ -104,6 +110,9 @@ tools (`criar_projeto`, `ler_projeto`, `adicionar_tarefas`, `editar_tarefa`, `ex
 `nivelar_recursos`, `definir_linha_de_base`, `salvar_como`) open a project file, apply the same
 operations as the app and save it back, so an assistant can build and change schedules that open
 in Etapix and Project. `integrations/skill/etapix/SKILL.md` tells the assistant how to use them.
+
+Ao usar o conector, o conteúdo do cronograma vai aos servidores do fornecedor do assistente: veja
+[Privacidade](#privacidade).
 
 `tools\build-integrations.ps1` packs `dist\etapix.mcpb` (Claude Desktop extension),
 `dist\etapix-skill.zip` (for claude.ai) and `dist\Etapix-Claude-Codex-<version>.zip`, whose

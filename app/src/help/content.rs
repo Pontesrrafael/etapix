@@ -367,8 +367,8 @@ pub const TUTORIALS: &[Tutorial] = &[
             check: "O assistente informa os ids criados e a data de término; o arquivo abre no Etapix e no Project.",
             fails: "Se o assistente disser que não tem as ferramentas do Etapix, reinicie-o; se continuar, reinstale o Etapix.",
         }],
-        tips: &["Salve o que estiver aberto no Etapix antes de pedir mudanças no mesmo arquivo: o assistente grava direto nele."],
-        limits: "O conector funciona no Claude Code, no Codex e no Claude Desktop (Windows). No claude.ai pelo navegador, só a skill.",
+        tips: &["Salve o que estiver aberto no Etapix antes de pedir mudanças no mesmo arquivo: o assistente grava direto nele.", "Use o conector só se a política da sua empresa permitir e evite dados pessoais desnecessários nos nomes de tarefas e recursos."],
+        limits: "O conector funciona no Claude Code, no Codex e no Claude Desktop (Windows). No claude.ai pelo navegador, só a skill. O Etapix não envia nada pela internet; ao usar o conector, o conteúdo do cronograma (nomes de tarefas, recursos — que podem ser nomes de pessoas —, datas, custos) é enviado pelo assistente (Claude/Codex) aos servidores do fornecedor, possivelmente fora do Brasil; use só se a política da sua empresa permitir e evite dados pessoais desnecessários.",
         tour: &[],
     },
 ];

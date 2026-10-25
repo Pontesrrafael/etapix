@@ -10,6 +10,7 @@ icons="$HOME/.local/share/icons/hicolor/256x256/apps"
 mkdir -p "$dir" "$apps" "$icons" "$HOME/.local/bin"
 install -m 755 "$here/etapix" "$here/etapix-mcp" "$dir/"
 install -m 755 "$here/desinstalar.sh" "$dir/"
+install -m 644 "$here/LICENSE-MIT" "$here/LICENSE-APACHE" "$here/THIRD-PARTY-NOTICES.txt" "$dir/"
 install -m 644 "$here/etapix.png" "$icons/etapix.png"
 ln -sf "$dir/etapix" "$HOME/.local/bin/etapix"
 

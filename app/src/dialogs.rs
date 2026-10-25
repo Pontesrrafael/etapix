@@ -43,6 +43,7 @@ impl App {
                 ui.label(RichText::new(format!("Etapix {}", env!("CARGO_PKG_VERSION"))).strong().size(16.0));
                 ui.label("Planejador de projetos compatível com o Microsoft Project.");
                 ui.label(RichText::new("Fontes Inter e Plus Jakarta Sans (SIL Open Font License).").color(MUTED));
+                ui.label(RichText::new("Licença MIT ou Apache-2.0. As licenças e os avisos das bibliotecas usadas estão na pasta do programa (THIRD-PARTY-NOTICES.txt).").color(MUTED));
                 ui.hyperlink_to("github.com/Pontesrrafael/etapix", "https://github.com/Pontesrrafael/etapix");
             });
             self.about = open;
