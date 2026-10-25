@@ -138,6 +138,7 @@ fn write_in_use(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
 fn install() -> Result<PathBuf, String> {
     let dir = install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    remove_set_aside(&dir);
     let exe = dir.join("etapix.exe");
     std::fs::write(&exe, APP).map_err(|e| format!("{}: {e} (o Etapix está aberto?)", exe.display()))?;
     // Keep a copy of this installer as the uninstaller.
@@ -155,6 +156,16 @@ fn install() -> Result<PathBuf, String> {
     create_shortcut(&exe, &shortcut())?;
     register(&dir, &uninstaller)?;
     Ok(exe)
+}
+
+/// Deletes the copies `write_in_use` set aside in earlier installs; one still running stays.
+fn remove_set_aside(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        if e.file_name().to_string_lossy().contains(".antigo-") {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
 }
 
 fn uninstall() -> Result<(), String> {
