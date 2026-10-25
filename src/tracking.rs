@@ -50,15 +50,6 @@ pub struct Tracking {
     pub acwp: f64,
 }
 
-impl Tracking {
-    pub fn cv(&self) -> f64 {
-        self.bcwp - self.acwp
-    }
-    pub fn sv(&self) -> f64 {
-        self.bcwp - self.bcws
-    }
-}
-
 pub fn tracking(project: &Project, cals: &Calendars, schedule: &[TaskSchedule], costs: &Costs) -> Vec<Tracking> {
     let n = project.tasks.len();
     let status = project.status_date.map(|d| cals.clock.at(d));

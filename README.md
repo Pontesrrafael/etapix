@@ -5,7 +5,7 @@
 | Sistema | Instalador | Como instalar |
 |---|---|---|
 | **Windows** 10 ou 11 | [⬇ Etapix-Instalador.exe](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Instalador.exe) | Baixe e dê dois cliques. |
-| **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/raw/master/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
+| **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/releases/latest/download/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
 
 Os dois instalam o Etapix só para o seu usuário, sem administrador, e registram o conector do Etapix no Claude Code e no Codex, se estiverem instalados. No Windows, o instalador também oferece o conector ao Claude Desktop. Arquivos `.mpp` abrem, são criados e salvos em qualquer máquina, no Windows ou no Linux, sem o Microsoft Project: tarefas, estrutura, vínculos, recursos de trabalho, material e custo, taxas que mudam com o tempo, atribuições, horas extras, calendários, andamento e linha de base vão direto para o próprio `.mpp`, que guarda também o que só o Project usa (modos de exibição, formatações).
 

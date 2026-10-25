@@ -2,7 +2,6 @@
 //! calendar or a resource's calendar, editing the working shifts of each day of the week and
 //! dated exceptions (holidays, time off or special working hours), and saving via [`Doc::apply`].
 
-#![allow(dead_code, private_interfaces)]
 
 use std::cell::RefCell;
 
@@ -481,16 +480,6 @@ pub fn open(doc: &Doc) {
     STATE.with(|s| *s.borrow_mut() = Some(CalendarWindow::new(doc)));
 }
 
-/// Closes the "Alterar Período de Trabalho" window if open.
-pub fn close() {
-    STATE.with(|s| *s.borrow_mut() = None);
-}
-
-/// Whether the "Alterar Período de Trabalho" window is currently open.
-pub fn is_open() -> bool {
-    STATE.with(|s| s.borrow().is_some())
-}
-
 /// Draws the "Alterar Período de Trabalho" window when open.
 pub fn show(ctx: &egui::Context, doc: &mut Doc) {
     STATE.with(|s| {
@@ -588,6 +577,14 @@ mod tests {
             shifts: String::new(),
         });
         assert!(bad_exc.to_calendar(&Calendar::standard()).is_err());
+    }
+
+    fn is_open() -> bool {
+        STATE.with(|s| s.borrow().is_some())
+    }
+
+    fn close() {
+        STATE.with(|s| *s.borrow_mut() = None);
     }
 
     #[test]

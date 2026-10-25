@@ -5,7 +5,6 @@
 //! - [`gantt_pdf`]: task table on the left + Gantt chart on the right, paginated on A4 landscape.
 //! - [`report_pdf`] / [`all_reports_pdf`]: the reports of the `Relatório` tab.
 
-#![allow(dead_code, private_interfaces)]
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -792,46 +791,6 @@ fn sections_pdf_bytes(doc: &Doc, subtitle: &str, sections: &[ReportSection]) -> 
         draw_page_banner(page, doc, subtitle, idx + 1, total_pages);
     }
     build_pdf(&pages)
-}
-
-impl crate::App {
-    /// Opens a Save dialog and exports the task table + Gantt chart to PDF.
-    pub(crate) fn export_gantt_pdf(&mut self) {
-        if self.headless {
-            return;
-        }
-        let stem = self.file_name().trim_end_matches(".mpp").trim_end_matches(".xml").to_string();
-        let picked = rfd::FileDialog::new()
-            .add_filter("Documento PDF (*.pdf)", &["pdf"])
-            .set_file_name(format!("{stem}-gantt.pdf"))
-            .save_file();
-        if let Some(path) = picked {
-            let r = gantt_pdf(&self.doc, &path);
-            self.report(r);
-        }
-    }
-
-    /// Opens a Save dialog and exports `report` from the `Relatório` tab to PDF.
-    pub(crate) fn export_report_pdf(&mut self, report: Report) {
-        if self.headless {
-            return;
-        }
-        let stem = self.file_name().trim_end_matches(".mpp").trim_end_matches(".xml").to_string();
-        let suffix = match report {
-            Report::Dashboard => "paineis",
-            Report::Resources => "recursos",
-            Report::Costs => "custos",
-            Report::InProgress => "em-andamento",
-        };
-        let picked = rfd::FileDialog::new()
-            .add_filter("Documento PDF (*.pdf)", &["pdf"])
-            .set_file_name(format!("{stem}-{suffix}.pdf"))
-            .save_file();
-        if let Some(path) = picked {
-            let r = report_pdf(&self.doc, report, &path);
-            self.report(r);
-        }
-    }
 }
 
 #[cfg(test)]
