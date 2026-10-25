@@ -12048,7 +12048,7 @@ Copyright (c) Emil Ernerfeldt <emil.ernerfeldt@gmail.com>. Distribuído sob MIT:
 
 --- egui_extras 0.29.1 · MIT OR Apache-2.0 · https://github.com/emilk/egui ---
 
-Copyright (c) Dominik RÃ¶ssler <dominik@freshx.de>, Emil Ernerfeldt <emil.ernerfeldt@gmail.com>, RenÃ© RÃ¶ssler <rene@freshx.de>. Distribuído sob MIT: texto no apêndice.
+Copyright (c) Dominik Rössler <dominik@freshx.de>, Emil Ernerfeldt <emil.ernerfeldt@gmail.com>, René Rössler <rene@freshx.de>. Distribuído sob MIT: texto no apêndice.
 
 --- egui_glow 0.29.1 · MIT OR Apache-2.0 · https://github.com/emilk/egui/tree/master/crates/egui_glow ---
 
