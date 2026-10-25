@@ -4,8 +4,10 @@
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
+mod calendar_window;
 mod dialogs;
 mod doc;
+mod export;
 mod fmt;
 mod fonts;
 mod gantt;
