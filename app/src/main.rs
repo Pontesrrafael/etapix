@@ -18,6 +18,7 @@ mod mpp;
 mod monkey_tests;
 mod ribbon;
 mod snapshot;
+mod task_usage;
 
 use std::collections::BTreeSet;
 
@@ -276,6 +277,7 @@ enum Report {
 enum View {
     Gantt,
     Sheet,
+    Usage,
 }
 
 /// What a ribbon button, shortcut or menu asks for; run after the frame's UI is laid out.
@@ -382,6 +384,8 @@ struct App {
     /// Tasks (by UID) shown on the timeline strip.
     timeline_tasks: BTreeSet<i64>,
     gantt_opts: gantt::Options,
+    gantt_interaction: gantt::Interaction,
+    usage_first: Option<chrono::NaiveDate>,
     outline_numbers: bool,
     find: Option<String>,
     assign: bool,
@@ -440,6 +444,8 @@ impl App {
             clipboard: Vec::new(),
             timeline_tasks: BTreeSet::new(),
             gantt_opts: gantt::Options::default(),
+            gantt_interaction: gantt::Interaction::default(),
+            usage_first: None,
             outline_numbers: false,
             find: None,
             assign: false,
@@ -489,6 +495,8 @@ impl App {
 
     fn set_doc(&mut self, doc: Doc) {
         self.doc = doc;
+        self.gantt_interaction = gantt::Interaction::default();
+        self.usage_first = None;
         self.selected.clear();
         self.cursor = (0, Col::Name);
         self.editing = None;
@@ -724,6 +732,7 @@ impl App {
             }
             Act::View(v) => {
                 self.view = v;
+                self.gantt_interaction = gantt::Interaction::default();
                 Ok(())
             }
             Act::Copy | Act::Cut => {
@@ -1419,6 +1428,12 @@ impl App {
         }
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
         for ev in events {
+            // Usage has no active editable cell; never type into or delete a hidden grid row.
+            if self.view == View::Usage && !matches!(&ev, egui::Event::Key {
+                key: Key::S | Key::O | Key::N | Key::Z | Key::Y, modifiers, ..
+            } if modifiers.ctrl) {
+                continue;
+            }
             match ev {
                 egui::Event::Text(t) if !mods.ctrl => {
                     self.begin_edit(self.cursor.0, self.cursor.1, Some(t));
@@ -1729,17 +1744,12 @@ impl App {
                 gantt::bar(&p, &scale, &self.doc, i, mid, self.gantt_opts);
             }
         }
-        let resp = ui.interact(body, ui.id().with("chart"), Sense::click());
-        if let Some(pos) = resp.hover_pos() {
-            let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor() as usize;
-            if row < n {
-                let s = &self.doc.schedule[row];
-                let (x0, x1) = (scale.x(self.doc.dt(s.start)), scale.x(self.doc.dt(s.finish)));
-                if pos.x >= x0 - 6.0 && pos.x <= x1 + 6.0 {
-                    let tip = gantt::tooltip(&self.doc, row);
-                    resp.clone().on_hover_text_at_pointer(tip);
-                }
-            }
+        let resp = ui.interact(body, ui.id().with("chart"), Sense::click_and_drag());
+        if let Some(edit) = gantt::interact(ui, body, &scale, &self.doc, &mut self.gantt_interaction, (self.row_h, self.scroll_y), &resp) {
+            let version = self.doc.begin();
+            let result = edit.and_then(|edit| self.doc.edit_gantt(edit));
+            self.doc.end(version);
+            self.report(result);
         }
         if resp.clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
@@ -1752,6 +1762,10 @@ impl App {
     }
 
     fn central(&mut self, ui: &mut egui::Ui) {
+        if self.view == View::Usage {
+            task_usage::show(ui, &self.doc, &mut self.usage_first);
+            return;
+        }
         let full = ui.max_rect();
         // The vertical view name on the left edge.
         let label = Rect::from_min_size(full.min, Vec2::new(24.0, full.height()));
@@ -1837,6 +1851,9 @@ impl App {
                 }
                 if small_button(ui, Icon::Sheet, "", true) {
                     acts.push(Act::View(View::Sheet));
+                }
+                if small_button(ui, Icon::Usage, "Uso da Tarefa", true) {
+                    acts.push(Act::View(View::Usage));
                 }
                 if small_button(ui, Icon::Gantt, "", true) {
                     acts.push(Act::View(View::Gantt));
@@ -1952,7 +1969,7 @@ impl App {
         let (Some((step, frames, asked)), Some(dir)) = (self.snap, snapshot::dir()) else { return };
         ctx.request_repaint();
         // After the tabs: the help panel, the Central de Ajuda and a tour step.
-        const EXTRA: [&str; 3] = ["ajuda-painel", "ajuda-central", "ajuda-tour"];
+        const EXTRA: [&str; 4] = ["ajuda-painel", "ajuda-central", "ajuda-tour", "uso-tarefa"];
         let (tab, name) = match STEPS.get(step) {
             Some(&s) => s,
             None => match EXTRA.get(step - STEPS.len()) {
@@ -1964,6 +1981,7 @@ impl App {
             },
         };
         if frames == 0 {
+            self.view = if name == "uso-tarefa" { View::Usage } else { View::Gantt };
             self.help.panel = None;
             self.help.catalog = false;
             self.help.tour = None;
