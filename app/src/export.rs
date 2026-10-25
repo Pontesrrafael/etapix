@@ -573,11 +573,6 @@ fn draw_gantt_links(c: &mut Canvas, doc: &Doc, s: &PdfScale, start_row: usize, e
 // ---------------------------------------------------------------------------------------------
 // Report PDF export
 
-fn money(v: f64) -> String {
-    let s = format!("{v:.2}").replace('.', ",");
-    format!("R$ {s}")
-}
-
 struct ReportSection {
     title: String,
     summary_line: Option<String>,
@@ -599,7 +594,7 @@ fn dashboard_section(doc: &Doc) -> ReportSection {
         vec!["Concluídas".into(), done.to_string()],
         vec!["Com folga negativa".into(), late.to_string()],
         vec!["Recursos".into(), doc.project.resources.len().to_string()],
-        vec!["Custo total".into(), money(top_cost)],
+        vec!["Custo total".into(), crate::fmt::money(top_cost)],
     ];
     ReportSection {
         title: "Visão Geral do Projeto".into(),
@@ -622,7 +617,7 @@ fn resources_section(doc: &Doc) -> ReportSection {
                 r.name.clone(),
                 format!("{:.0}%", r.max_units * 100.0),
                 tasks.to_string(),
-                money(doc.costs.resource[k]),
+                crate::fmt::money(doc.costs.resource[k]),
             ]
         })
         .collect();
@@ -638,7 +633,7 @@ fn resources_section(doc: &Doc) -> ReportSection {
 fn costs_section(doc: &Doc) -> ReportSection {
     let rows: Vec<Vec<String>> = (0..doc.project.tasks.len())
         .filter(|&i| doc.costs.task[i] != 0.0)
-        .map(|i| vec![doc.project.tasks[i].id.to_string(), doc.project.tasks[i].name.clone(), money(doc.costs.task[i])])
+        .map(|i| vec![doc.project.tasks[i].id.to_string(), doc.project.tasks[i].name.clone(), crate::fmt::money(doc.costs.task[i])])
         .collect();
     let total: f64 = (0..doc.project.tasks.len())
         .filter(|&i| doc.project.tasks[i].parent.is_none())
@@ -646,7 +641,7 @@ fn costs_section(doc: &Doc) -> ReportSection {
         .sum();
     ReportSection {
         title: "Relatório: Custos".into(),
-        summary_line: Some(format!("Custo total do projeto: {}", money(total))),
+        summary_line: Some(format!("Custo total do projeto: {}", crate::fmt::money(total))),
         headers: vec![("Id", 60.0), ("Tarefa", 500.0), ("Custo", 226.0)],
         rows,
         empty_note: "Nenhuma tarefa tem custo (atribua recursos com taxas ou custos fixos).",

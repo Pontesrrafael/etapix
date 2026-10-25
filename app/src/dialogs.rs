@@ -26,11 +26,6 @@ fn table(ui: &mut egui::Ui, id: &str, header: &[&str], rows: Vec<Vec<String>>) {
     });
 }
 
-fn money(v: f64) -> String {
-    let s = format!("{v:.2}").replace('.', ",");
-    format!("R$ {s}")
-}
-
 impl App {
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         self.find_window(ctx);
@@ -38,6 +33,10 @@ impl App {
         self.add_resource_window(ctx);
         self.report_window(ctx);
         self.move_project_window(ctx);
+        // The calendar editor changes the project: one undo step per change, as other edits.
+        let version = self.doc.begin();
+        self.calendar_window(ctx);
+        self.doc.end(version);
         if self.about {
             let mut open = true;
             egui::Window::new("Sobre o Etapix").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
@@ -186,7 +185,7 @@ impl App {
                     .enumerate()
                     .map(|(k, r)| {
                         let tasks = doc.project.assignments.iter().filter(|a| a.resource == k).count();
-                        vec![r.name.clone(), format!("{:.0}%", r.max_units * 100.0), tasks.to_string(), money(doc.costs.resource[k])]
+                        vec![r.name.clone(), format!("{:.0}%", r.max_units * 100.0), tasks.to_string(), crate::fmt::money(doc.costs.resource[k])]
                     })
                     .collect();
                 table(ui, "resources", &["Recurso", "Unid. máximas", "Tarefas", "Custo"], rows);
@@ -194,10 +193,10 @@ impl App {
             Report::Costs => {
                 let rows: Vec<Vec<String>> = (0..doc.project.tasks.len())
                     .filter(|&i| doc.costs.task[i] != 0.0)
-                    .map(|i| vec![doc.project.tasks[i].id.to_string(), doc.project.tasks[i].name.clone(), money(doc.costs.task[i])])
+                    .map(|i| vec![doc.project.tasks[i].id.to_string(), doc.project.tasks[i].name.clone(), crate::fmt::money(doc.costs.task[i])])
                     .collect();
                 let total: f64 = (0..doc.project.tasks.len()).filter(|&i| doc.project.tasks[i].parent.is_none()).map(|i| doc.costs.task[i]).sum();
-                ui.label(RichText::new(format!("Custo total do projeto: {}", money(total))).strong());
+                ui.label(RichText::new(format!("Custo total do projeto: {}", crate::fmt::money(total))).strong());
                 if rows.is_empty() {
                     ui.label(RichText::new("Nenhuma tarefa tem custo (atribua recursos com taxas ou custos fixos).").color(MUTED));
                 } else {

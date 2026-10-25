@@ -227,7 +227,37 @@ enum Col {
     Finish,
     Pred,
     Res,
+    // Columns added with "Adicionar Nova Coluna".
+    Percent,
+    Work,
+    Cost,
+    Slack,
+    BaseStart,
+    BaseFinish,
     Add,
+}
+
+/// The columns "Adicionar Nova Coluna" offers: (column, header, default width, settings key).
+const EXTRA_COLUMNS: [(Col, &str, f32, &str); 6] = [
+    (Col::Percent, "% Concluída", 80.0, "percent"),
+    (Col::Work, "Trabalho", 80.0, "work"),
+    (Col::Cost, "Custo", 96.0, "cost"),
+    (Col::Slack, "Margem de\nAtraso Total", 84.0, "slack"),
+    (Col::BaseStart, "Início da\nLinha de Base", 100.0, "baseline_start"),
+    (Col::BaseFinish, "Término da\nLinha de Base", 100.0, "baseline_finish"),
+];
+
+/// Extra columns shown, with their widths, as saved from the last session.
+fn saved_extra_columns() -> Vec<(Col, f32)> {
+    let Some(saved) = fonts::setting("extra_columns") else { return Vec::new() };
+    saved
+        .split(',')
+        .filter_map(|part| {
+            let (key, w) = part.split_once(':').unwrap_or((part, ""));
+            let &(col, _, default, _) = EXTRA_COLUMNS.iter().find(|c| c.3 == key.trim())?;
+            Some((col, w.trim().parse::<f32>().map_or(default, |w| w.clamp(16.0, 900.0))))
+        })
+        .collect()
 }
 
 const COLUMNS: [(Col, &str, f32); 10] = [
@@ -334,6 +364,12 @@ enum Act {
     HowTo,
     HelpCenter,
     Tour(&'static str),
+    /// Arquivo > Exportar: the task table and the Gantt chart as a PDF.
+    ExportGantt,
+    /// Relatório > Exportar: every report as a PDF.
+    ExportReports,
+    /// Projeto > Alterar Período de Trabalho.
+    WorkingTime,
 }
 
 /// What waits for "Deseja salvar as alterações?".
@@ -382,6 +418,8 @@ struct App {
     /// Row height and column widths, resizable by dragging the grid's borders.
     row_h: f32,
     col_w: [f32; 10],
+    /// Columns added after Nomes dos Recursos, with their widths.
+    extra: Vec<(Col, f32)>,
     /// Copied tasks: name, duration in days and outline level.
     clipboard: Vec<(String, f64, usize)>,
     /// Tasks (by UID) shown on the timeline strip.
@@ -411,6 +449,8 @@ struct App {
     /// Filter, sort and collapsed summaries; `shown` is the tasks they leave, top to bottom.
     display: rows::Display,
     shown: Vec<usize>,
+    /// The display preferences last saved (see `save_preferences`).
+    saved_prefs: Vec<(&'static str, String)>,
 }
 
 impl App {
@@ -447,6 +487,7 @@ impl App {
             text_size,
             row_h: fonts::setting("row_height").and_then(|v| v.parse().ok()).unwrap_or(ROW).max(text_size + 8.0),
             col_w: saved_widths(),
+            extra: saved_extra_columns(),
             clipboard: Vec::new(),
             timeline_tasks: BTreeSet::new(),
             gantt_opts: gantt::Options::default(),
@@ -468,6 +509,54 @@ impl App {
             suggest: true,
             display: rows::Display::default(),
             shown: Vec::new(),
+            saved_prefs: Vec::new(),
+        }
+        .with_preferences()
+    }
+
+    /// The display choices kept between sessions: zoom, the grid/chart split, the timeline, the
+    /// view, outline numbers and the chart's bar styles.
+    fn preferences(&self) -> Vec<(&'static str, String)> {
+        let flag = |b: bool| if b { "1" } else { "0" }.to_string();
+        vec![
+            ("zoom", format!("{:.2}", self.day)),
+            ("split", format!("{:.0}", self.split)),
+            ("timeline", flag(self.timeline)),
+            ("view", if self.view == View::Sheet { "sheet" } else { "gantt" }.into()),
+            ("outline_numbers", flag(self.outline_numbers)),
+            ("critical_bars", flag(self.gantt_opts.critical)),
+            ("baseline_bars", flag(self.gantt_opts.baseline)),
+            ("slack_bars", flag(self.gantt_opts.slack)),
+        ]
+    }
+
+    fn with_preferences(mut self) -> Self {
+        let get = |k: &str| fonts::setting(k);
+        let on = |k: &str| get(k).map(|v| v == "1");
+        if let Some(day) = get("zoom").and_then(|v| v.parse::<f32>().ok()) {
+            self.day = day.clamp(1.5, 120.0);
+        }
+        if let Some(split) = get("split").and_then(|v| v.parse::<f32>().ok()) {
+            self.split = split.max(120.0);
+        }
+        self.timeline = on("timeline").unwrap_or(self.timeline);
+        if get("view").as_deref() == Some("sheet") {
+            self.view = View::Sheet;
+        }
+        self.outline_numbers = on("outline_numbers").unwrap_or(self.outline_numbers);
+        self.gantt_opts.critical = on("critical_bars").unwrap_or(self.gantt_opts.critical);
+        self.gantt_opts.baseline = on("baseline_bars").unwrap_or(self.gantt_opts.baseline);
+        self.gantt_opts.slack = on("slack_bars").unwrap_or(self.gantt_opts.slack);
+        self.saved_prefs = self.preferences();
+        self
+    }
+
+    /// Saves the display choices when one changed.
+    fn save_preferences(&mut self) {
+        let now = self.preferences();
+        if now != self.saved_prefs {
+            fonts::save_settings(&now);
+            self.saved_prefs = now;
         }
     }
 
@@ -852,8 +941,32 @@ impl App {
                 self.start_tour(id);
                 Ok(())
             }
+            Act::ExportGantt => self.export_pdf("Gantt", export::gantt_pdf),
+            Act::ExportReports => self.export_pdf("Relatórios", export::all_reports_pdf),
+            Act::WorkingTime => {
+                self.open_calendar_window();
+                Ok(())
+            }
         };
         self.report(r);
+    }
+
+    /// Asks where to save a PDF and writes it with `write`.
+    fn export_pdf(&mut self, what: &str, write: fn(&Doc, &std::path::Path) -> Result<(), String>) -> Result<(), String> {
+        if self.headless {
+            return Ok(());
+        }
+        if self.tab == Tab::File {
+            self.tab = Tab::Task;
+        }
+        let stem = self.file_name();
+        let stem = stem.trim_end_matches(".mpp").trim_end_matches(".xml");
+        let Some(path) = rfd::FileDialog::new().add_filter("PDF (*.pdf)", &["pdf"]).set_file_name(format!("{stem} - {what}.pdf")).save_file() else {
+            return Ok(());
+        };
+        write(&self.doc, &path)?;
+        self.message = Some(format!("Exportado: {}", path.display()));
+        Ok(())
     }
 
     /// Project's "Inserir Resumo": a summary above the selection with the selection under it, or
@@ -1192,7 +1305,7 @@ impl App {
                 self.tab = Tab::Task;
             }
             ui.add_space(16.0);
-            for (act, name) in [(Act::New, "Novo"), (Act::Open, "Abrir"), (Act::Save, "Salvar"), (Act::SaveAs, "Salvar como")] {
+            for (act, name) in [(Act::New, "Novo"), (Act::Open, "Abrir"), (Act::Save, "Salvar"), (Act::SaveAs, "Salvar como"), (Act::ExportGantt, "Exportar PDF"), (Act::ExportReports, "Exportar relatórios")] {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(170.0, 36.0), Sense::click());
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, 0.0, GREEN_DARK);
@@ -1324,6 +1437,15 @@ impl App {
             Col::Finish => fmt::date(self.doc.dt(s.finish)),
             Col::Pred => self.doc.predecessors_text(row),
             Col::Res => self.doc.resources_text(row),
+            Col::Percent => format!("{}%", t.progress.percent_complete),
+            Col::Work => {
+                let minutes: f64 = self.doc.project.assignments.iter().filter(|a| a.task == row).map(|a| a.work()).sum();
+                format!("{} hrs", fmt::number(minutes / 60.0))
+            }
+            Col::Cost => fmt::money(self.doc.costs.task.get(row).copied().unwrap_or(0.0)),
+            Col::Slack => fmt::days(s.total_slack as f64 / doc::DAY as f64),
+            Col::BaseStart => t.baseline.as_ref().map_or("ND".into(), |b| fmt::date(b.start)),
+            Col::BaseFinish => t.baseline.as_ref().map_or("ND".into(), |b| fmt::date(b.finish)),
             Col::Ind | Col::Mode | Col::Add => String::new(),
         }
     }
@@ -1332,7 +1454,7 @@ impl App {
         let summary = row < self.n() && self.doc.project.tasks[row].summary;
         match col {
             Col::Name => true,
-            Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => !summary,
+            Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res | Col::Percent => !summary,
             _ => false,
         }
     }
@@ -1400,6 +1522,10 @@ impl App {
                 Some(d) => self.doc.set_start(row, d),
                 None => Err(format!("Data inválida: {text} (use dd/mm/aa)")),
             },
+            Col::Percent => match text.trim_end_matches('%').trim().parse::<u32>() {
+                Ok(p) if p <= 100 => self.doc.set_percent(row, p),
+                _ => Err(format!("% Concluída inválida: {text} (use de 0 a 100)")),
+            },
             Col::Finish => match fmt::parse_date(&text) {
                 Some(d) => self.doc.set_finish(row, d),
                 None => Err(format!("Data inválida: {text} (use dd/mm/aa)")),
@@ -1412,18 +1538,85 @@ impl App {
         row
     }
 
-    /// The grid's columns with their current widths.
-    fn columns(&self) -> [(Col, &'static str, f32); 10] {
-        let mut cols = COLUMNS;
-        for (c, w) in cols.iter_mut().zip(self.col_w) {
-            c.2 = w;
+    /// The grid's columns with their current widths: the standard ones, the added ones after
+    /// Nomes dos Recursos, then Adicionar Nova Coluna.
+    fn columns(&self) -> Vec<(Col, &'static str, f32)> {
+        let mut cols: Vec<_> = COLUMNS.iter().zip(self.col_w).map(|(c, w)| (c.0, c.1, w)).collect();
+        let add = cols.pop();
+        for &(col, w) in &self.extra {
+            let header = EXTRA_COLUMNS.iter().find(|c| c.0 == col).map_or("", |c| c.1);
+            cols.push((col, header, w));
         }
+        cols.extend(add);
         cols
+    }
+
+    /// "Adicionar Nova Coluna": a click on its header lists the columns to add; a right click
+    /// on an added column's header offers to hide it.
+    fn column_menus(&mut self, ui: &mut egui::Ui, head: Rect, left: f32) {
+        let mut x = left;
+        for (col, _, w) in self.columns() {
+            let r = Rect::from_min_size(Pos2::new(x, head.top()), Vec2::new(w, HEAD)).intersect(head);
+            x += w;
+            if r.width() <= 0.0 {
+                continue;
+            }
+            let added = self.extra.iter().any(|e| e.0 == col);
+            if col != Col::Add && !added {
+                continue;
+            }
+            let resp = ui.interact(r, ui.id().with(("column-header", col as u8)), Sense::click());
+            if col == Col::Add {
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let id = ui.make_persistent_id("add-column");
+                if resp.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(id));
+                }
+                egui::popup_below_widget(ui, id, &resp, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                    ui.set_min_width(200.0);
+                    let mut any = false;
+                    for &(c, header, width, _) in &EXTRA_COLUMNS {
+                        if self.extra.iter().any(|e| e.0 == c) {
+                            continue;
+                        }
+                        any = true;
+                        if ui.button(header.replace('\n', " ")).clicked() {
+                            self.extra.push((c, width));
+                            self.save_layout();
+                        }
+                    }
+                    if !any {
+                        ui.label(egui::RichText::new("Todas as colunas já estão na grade.").color(Color32::from_gray(110)));
+                    }
+                });
+            } else {
+                resp.context_menu(|ui| {
+                    if ui.button("Ocultar Coluna").clicked() {
+                        self.extra.retain(|e| e.0 != col);
+                        self.save_layout();
+                        ui.close_menu();
+                    }
+                });
+            }
+        }
+    }
+
+    fn set_width(&mut self, col: Col, w: f32) {
+        let w = w.clamp(16.0, 900.0);
+        if let Some(i) = COLUMNS.iter().position(|c| c.0 == col) {
+            self.col_w[i] = w;
+        } else if let Some(e) = self.extra.iter_mut().find(|e| e.0 == col) {
+            e.1 = w;
+        }
     }
 
     fn save_layout(&self) {
         let widths = self.col_w.iter().map(|w| format!("{w:.0}")).collect::<Vec<_>>().join(",");
-        fonts::save_settings(&[("row_height", format!("{:.0}", self.row_h)), ("column_widths", widths)]);
+        let key = |c: Col| EXTRA_COLUMNS.iter().find(|e| e.0 == c).map_or("", |e| e.3);
+        let extra = self.extra.iter().map(|&(c, w)| format!("{}:{w:.0}", key(c))).collect::<Vec<_>>().join(",");
+        fonts::save_settings(&[("row_height", format!("{:.0}", self.row_h)), ("column_widths", widths), ("extra_columns", extra)]);
     }
 
     /// The width that shows the whole column (header and every task), as a double-click on a
@@ -1431,7 +1624,7 @@ impl App {
     fn fit_width(&self, ui: &egui::Ui, col: Col) -> f32 {
         let font = FontId::proportional(self.text_size);
         let measure = |t: &str, f: FontId| ui.fonts(|fonts| fonts.layout_no_wrap(t.to_string(), f, TEXT).size().x);
-        let header = COLUMNS.iter().find(|c| c.0 == col).map(|c| c.1).unwrap_or("");
+        let header = self.columns().iter().find(|c| c.0 == col).map(|c| c.1).unwrap_or("");
         let mut w = header.split('\n').map(|l| measure(l, FontId::proportional(self.text_size.min(12.0)))).fold(0.0, f32::max) + 12.0;
         for i in 0..self.n() {
             let t = &self.doc.project.tasks[i];
@@ -1440,8 +1633,8 @@ impl App {
                     let f = if t.summary { font_named(SEMIBOLD, self.text_size) } else { font.clone() };
                     measure(&t.name, f) + (self.doc.outline_level(i) - 1) as f32 * 14.0 + if t.summary { 12.0 } else { 0.0 } + 12.0
                 }
-                Col::Num | Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => measure(&self.cell_text(i, col), font.clone()) + 12.0,
-                _ => 0.0,
+                Col::Ind | Col::Mode | Col::Add => 0.0,
+                _ => measure(&self.cell_text(i, col), font.clone()) + 12.0,
             };
             w = w.max(cell);
         }
@@ -1463,9 +1656,10 @@ impl App {
         let max_row = self.shown.len() + 50;
         let at = self.row_of(self.cursor.0).unwrap_or(0);
         let row = self.task_at((at as i64 + drow).clamp(0, max_row as i64) as usize);
-        let idx = COLUMNS.iter().position(|c| c.0 == self.cursor.1).unwrap_or(3) as i64;
-        let idx = (idx + dcol).clamp(1, COLUMNS.len() as i64 - 2) as usize;
-        self.cursor = (row, COLUMNS[idx].0);
+        let cols = self.columns();
+        let idx = cols.iter().position(|c| c.0 == self.cursor.1).unwrap_or(3) as i64;
+        let idx = (idx + dcol).clamp(1, cols.len() as i64 - 2) as usize;
+        self.cursor = (row, cols[idx].0);
         self.select_only(row);
     }
 
@@ -1543,7 +1737,7 @@ impl App {
         let n = self.n();
         let head = Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + HEAD));
         let body = Rect::from_min_max(Pos2::new(area.left(), head.bottom()), area.max);
-        let total_w: f32 = self.col_w.iter().sum();
+        let total_w: f32 = self.columns().iter().map(|c| c.2).sum();
         self.grid_x = self.grid_x.clamp(0.0, (total_w - area.width()).max(0.0));
         let left = area.left() - self.grid_x;
         let p = ui.painter_at(area);
@@ -1567,6 +1761,7 @@ impl App {
             x += w;
         }
         p.line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0_f32, Color32::from_gray(170)));
+        self.column_menus(ui, head, left);
         // The "?" in the corner opens the grid's Como usar.
         let (nx0, nw0) = self.col_x(Col::Num);
         let corner = Rect::from_min_size(Pos2::new(left + nx0, head.top()), Vec2::new(nw0, HEAD));
@@ -1653,13 +1848,15 @@ impl App {
                         let name = if self.outline_numbers { format!("{} {}", outline_number(&self.doc, row), t.name) } else { t.name.clone() };
                         cell_text(&clip, &name, name_font, tx, r, self.row_h, self.text_size);
                     }
-                    Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => {
+                    Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res | Col::Percent | Col::Work | Col::Cost | Col::Slack | Col::BaseStart | Col::BaseFinish => {
                         let clip = pb.with_clip_rect(r.shrink(1.0).intersect(body));
                         if matches!(col, Col::Pred | Col::Res) {
                             cell_text(&clip, &self.cell_text(row, col), font, r.left() + 4.0, r, self.row_h, self.text_size);
                         } else {
-                            let align = if col == Col::Dur { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
-                            let pos = if col == Col::Dur { Pos2::new(r.right() - 4.0, r.center().y) } else { Pos2::new(r.left() + 4.0, r.center().y) };
+                            // Numbers line up on the right, as in Project.
+                            let right = matches!(col, Col::Dur | Col::Percent | Col::Work | Col::Cost | Col::Slack);
+                            let align = if right { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
+                            let pos = if right { Pos2::new(r.right() - 4.0, r.center().y) } else { Pos2::new(r.left() + 4.0, r.center().y) };
                             clip.text(pos, align, self.cell_text(row, col), font, TEXT);
                         }
                     }
@@ -1713,8 +1910,8 @@ impl App {
 
         // Column borders in the header: drag to resize, double-click to fit the contents.
         let mut x = left;
-        for (i, &(col, _, _)) in COLUMNS.iter().enumerate() {
-            x += self.col_w[i];
+        for (i, (col, _, w)) in self.columns().into_iter().enumerate() {
+            x += w;
             let handle = Rect::from_center_size(Pos2::new(x, head.center().y), Vec2::new(8.0, HEAD));
             if !area.contains(handle.center()) {
                 continue;
@@ -1724,10 +1921,11 @@ impl App {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
             if r.dragged() {
-                self.col_w[i] = (self.col_w[i] + r.drag_delta().x).clamp(16.0, 900.0);
+                self.set_width(col, w + r.drag_delta().x);
             }
             if r.double_clicked() {
-                self.col_w[i] = self.fit_width(ui, col);
+                let fit = self.fit_width(ui, col);
+                self.set_width(col, fit);
             }
             if r.drag_stopped() || r.double_clicked() {
                 self.save_layout();
@@ -1897,7 +2095,7 @@ impl App {
         let right = chart.unwrap_or(grid);
         let grid = if chart.is_none() { Rect::from_min_max(grid.min, Pos2::new(grid.right() - BAR, grid.bottom())) } else { grid };
         self.grid(ui, grid);
-        let grid_total: f32 = self.col_w.iter().sum();
+        let grid_total: f32 = self.columns().iter().map(|c| c.2).sum();
         let track = Rect::from_min_max(Pos2::new(grid.left(), grid.bottom()), Pos2::new(grid.right(), grid.bottom() + BAR));
         scrollbar(ui, "grid-h", track, true, grid_total, grid.width(), &mut self.grid_x);
         if let Some(c) = chart {
@@ -2101,6 +2299,10 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_ui(ctx);
+        // Not while a split or zoom is being dragged: once it settles.
+        if !ctx.input(|i| i.pointer.any_down()) {
+            self.save_preferences();
+        }
     }
 }
 

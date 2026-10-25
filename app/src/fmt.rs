@@ -45,6 +45,18 @@ pub fn parse_date(text: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(t, "%d/%m/%y").or_else(|_| NaiveDate::parse_from_str(t, "%d/%m/%Y")).ok()
 }
 
+/// A currency amount as Project shows it in Portuguese: "R$ 1234,50".
+pub fn money(v: f64) -> String {
+    let s = format!("{v:.2}").replace('.', ",");
+    format!("R$ {s}")
+}
+
+/// A number with up to two decimals and a decimal comma: "8", "2,5".
+pub fn number(v: f64) -> String {
+    let rounded = (v * 100.0).round() / 100.0;
+    if rounded.fract() == 0.0 { format!("{}", rounded as i64) } else { format!("{rounded}").replace('.', ",") }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,3 +74,4 @@ mod tests {
         assert_eq!(week_label(NaiveDate::from_ymd_opt(2026, 10, 11).unwrap()), "11/Out/26");
     }
 }
+

@@ -63,9 +63,12 @@ pub const TUTORIALS: &[Tutorial] = &[
         summary: "Liste as tarefas com duração, datas, predecessoras e recursos, e veja o cronograma em barras ao lado.",
         capabilities: &[
             "Digitar tarefas novas nas linhas vazias",
-            "Editar nome, duração, início, predecessoras e nomes dos recursos",
-            "Ajustar a largura das colunas e a altura das linhas",
+            "Editar nome, duração, início, término, predecessoras e nomes dos recursos",
+            "Ajustar a largura das colunas e a altura das linhas, e acrescentar colunas",
             "Selecionar várias tarefas (Ctrl e Shift) para os comandos da faixa de opções",
+            "Copiar, recortar e colar tarefas (Ctrl+C, Ctrl+X, Ctrl+V)",
+            "Recolher e expandir uma tarefa de resumo pelo triângulo ao lado do nome",
+            "No Gantt, arrastar a barra para mudar o início, puxar a ponta para mudar a duração, arrastar de uma barra a outra para vincular e, com Ctrl, arrastar para marcar o andamento",
         ],
         procedures: &[
             Procedure {
@@ -106,7 +109,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             "Dois cliques na coluna Modo da Tarefa alternam entre manual e automático.",
             "Uma data digitada em Início vira a restrição \"Não iniciar antes de\", como no Project.",
         ],
-        limits: "A coluna Término não é editável (mude a duração). Adicionar Nova Coluna ainda não adiciona colunas. A altura vale para todas as linhas.",
+        limits: "Digitar no Término muda a duração (em dias úteis). Adicionar Nova Coluna oferece % Concluída, Trabalho, Custo, Margem de Atraso Total e as datas da linha de base; clique com o botão direito no título de uma delas para ocultá-la. A altura vale para todas as linhas.",
         tour: &[
             center("Bem-vindo ao Etapix", "O Etapix organiza o projeto em tarefas: à esquerda a grade, à direita o Gráfico de Gantt."),
             step("grade.linha_vazia", None, "Digite aqui", "Clique numa linha vazia, digite o nome da tarefa e pressione Enter.", Missing::Center),
@@ -197,7 +200,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             "Ao fechar o Etapix, ou usar Novo e Abrir com alterações não salvas, ele pergunta se deseja salvar.",
             "O .mpp é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original não muda.",
         ],
-        limits: "Arquivos anteriores ao Project 2010 não abrem. Imprimir, Exportar, Compartilhar e Opções ainda não existem.",
+        limits: "Arquivos anteriores ao Project 2010 não abrem. Exportar PDF gera a tabela e o Gantt (A4 paisagem); para imprimir, abra o PDF. Compartilhar e Opções ainda não existem.",
         tour: &[],
     },
     Tutorial {
@@ -246,7 +249,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             fails: "Definir de novo substitui a linha de base anterior. Use Ctrl+Z para voltar.",
         }],
         tips: &["Mover Projeto desloca todas as tarefas automáticas; as manuais e as restrições de data ficam onde estão."],
-        limits: "Em cinza: Subprojeto, Suplementos, Campos Personalizados, Vínculos Entre Projetos, EAP, Alterar Período de Trabalho, Data de Status, Atualizar Projeto e Ortografia. Só a linha de base 0 é gravada.",
+        limits: "Em cinza: Subprojeto, Suplementos, Campos Personalizados, Vínculos Entre Projetos, EAP, Data de Status, Atualizar Projeto e Ortografia. Só a linha de base 0 é gravada.",
         tour: &[
             step("projeto.propriedades", Some(Tab::Project), "Informações do Projeto", "A data de início de todo o cronograma.", Missing::Skip),
             step("projeto.cronograma", Some(Tab::Project), "Cronograma", "Linha de base, recálculo e Mover Projeto.", Missing::Skip),
@@ -273,7 +276,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             fails: "Num projeto muito longo, as barras ficam finas: use Tarefas Selecionadas para aproximar uma parte.",
         }],
         tips: &["Shift + roda do mouse rola o Gantt na horizontal; arrastar a divisa entre a grade e o Gantt muda o espaço de cada um."],
-        limits: "Em cinza: Uso da Tarefa, Diagrama de Rede, Calendário, Organizador de Equipe, Uso do Recurso, Classificar, Estrutura de Tópicos, Tabelas, Realce, Filtro, Agrupar por, Detalhes, Janela e Macros.",
+        limits: "Classificar mantém a estrutura de tópicos, e o filtro mostra também os resumos das tarefas que passam por ele; nenhum dos dois muda a ordem no arquivo. Em cinza: Diagrama de Rede, Calendário, Organizador de Equipe, Uso do Recurso, Tabelas, Realce, Agrupar por, Detalhes, Janela e Macros.",
         tour: &[
             step("exibir.zoom", Some(Tab::View), "Zoom", "Escala de tempo, ampliar, reduzir e caber o projeto inteiro.", Missing::Skip),
             step("exibir.modo_divisao", Some(Tab::View), "Linha do Tempo", "Mostre ou oculte a faixa de resumo acima da grade.", Missing::Skip),
@@ -321,7 +324,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             fails: "Lista vazia: nenhuma tarefa foi iniciada nem está atrasada.",
         }],
         tips: &["Custos só aparecem quando os recursos têm taxas ou as tarefas têm custo fixo, o que vem de arquivos criados no Project."],
-        limits: "Os relatórios não são impressos nem exportados. Em cinza: Introdução, Personalizado, Relatórios Recentes, Comparar Projetos e Relatórios Visuais.",
+        limits: "Exportar PDF reúne todos os relatórios num arquivo. Em cinza: Introdução, Personalizado, Relatórios Recentes, Comparar Projetos e Relatórios Visuais.",
         tour: &[
             step("relatorio.exibir", Some(Tab::Report), "Relatórios", "Painéis, Recursos, Custos e Em Andamento.", Missing::Skip),
             step("ajuda.como_usar", Some(Tab::Report), "Como usar", "O passo a passo completo desta aba fica aqui.", Missing::Center),

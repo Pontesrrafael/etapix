@@ -258,7 +258,9 @@ impl App {
             if big_button(ui, Icon::Gantt, "Gráfico de\nGantt", true) {
                 acts.push(Act::View(View::Gantt));
             }
-            soon_big(ui, Icon::Usage, "Uso da\nTarefa");
+            if big_button(ui, Icon::Usage, "Uso da\nTarefa", true) {
+                acts.push(Act::View(View::Usage));
+            }
             column(ui, |ui| {
                 soon(ui, Icon::Network, "Diagrama de Rede");
                 soon(ui, Icon::Month, "Calendário");
@@ -425,6 +427,9 @@ fn report_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egui
         soon_big(ui, Icon::Compare, "Comparar\nProjetos");
     });
     group(ui, "Exportar", |ui| {
+        if big_button(ui, Icon::Export, "Exportar\nPDF", true) {
+            acts.push(Act::ExportReports);
+        }
         soon_big(ui, Icon::Export, "Relatórios\nVisuais");
     });
     vec![("relatorio.exibir", reports)]
@@ -445,7 +450,9 @@ fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egu
         soon_big(ui, Icon::Links, "Vínculos Entre\nProjetos");
         column(ui, |ui| {
             soon(ui, Icon::Wbs, "EAP");
-            soon(ui, Icon::WorkTime, "Alterar Período de Trabalho");
+            if small_button(ui, Icon::WorkTime, "Alterar Período de Trabalho", true) {
+                acts.push(Act::WorkingTime);
+            }
         });
     });
     let schedule = group(ui, "Cronograma", |ui| {
