@@ -4,9 +4,9 @@
 //! finish-to-start arrows.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime};
-use eframe::egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke};
+use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
-use crate::doc::Doc;
+use crate::doc::{Doc, GanttEdit};
 use crate::fmt;
 
 pub const BAR: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
@@ -270,4 +270,319 @@ pub fn tooltip(doc: &Doc, i: usize) -> String {
         fmt::days(s.total_slack as f64 / crate::doc::DAY as f64),
         if s.critical { "\nTarefa crítica" } else { "" }
     )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Gesture { Move, Resize, Link, Progress }
+
+impl Gesture {
+    fn cursor(self) -> egui::CursorIcon {
+        match self {
+            Self::Move => egui::CursorIcon::Grab,
+            Self::Resize | Self::Progress => egui::CursorIcon::ResizeHorizontal,
+            Self::Link => egui::CursorIcon::Crosshair,
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Self::Move => "Arraste na horizontal para mover o início (Não iniciar antes de); até outra barra para vincular. Esc cancela.",
+            Self::Resize => "Arraste a ponta direita para alterar a duração em dias úteis.",
+            Self::Link => "Arraste o início até outra barra para criar um vínculo Término-Início. Ctrl + arrastar ajusta o andamento.",
+            Self::Progress => "Arraste para ajustar o percentual concluído. Esc cancela.",
+        }
+    }
+}
+
+struct Drag {
+    task: usize,
+    version: u64,
+    kind: Gesture,
+    origin: Pos2,
+    start: NaiveDateTime,
+    finish: NaiveDateTime,
+    moved: bool,
+}
+
+/// Only pointer state: the project stays untouched until release, so Esc needs no undo.
+#[derive(Default)]
+pub struct Interaction { drag: Option<Drag> }
+
+fn bar_hit(doc: &Doc, scale: &Scale, task: usize, mid: f32, pos: Pos2) -> bool {
+    if (pos.y - mid).abs() > 7.0 { return false; }
+    let sch = &doc.schedule[task];
+    if doc.project.tasks[task].duration == 0 {
+        return (pos.x - scale.x(doc.dt(sch.start))).abs() <= 7.0;
+    }
+    sch.segments.iter().any(|&(a, b)| pos.x >= scale.x(doc.dt(a)) - 4.0 && pos.x <= scale.x(doc.dt(b)) + 4.0)
+}
+
+fn zone(doc: &Doc, scale: &Scale, task: usize, mid: f32, pos: Pos2, ctrl: bool) -> Option<Gesture> {
+    if doc.project.tasks[task].summary || !bar_hit(doc, scale, task, mid, pos) { return None; }
+    let t = &doc.project.tasks[task];
+    let sch = &doc.schedule[task];
+    let (x0, x1) = (scale.x(doc.dt(sch.start)), scale.x(doc.dt(sch.finish)));
+    if ctrl { return Some(Gesture::Progress); }
+    if t.duration == 0 { return Some(if pos.x < x0 - 3.0 { Gesture::Link } else { Gesture::Move }); }
+    let progress = x0 + (x1 - x0) * t.progress.percent_complete as f32 / 100.0;
+    if t.progress.percent_complete > 0 && (pos.x - progress).abs() <= 3.0 && (pos.y - mid).abs() <= 2.5 {
+        return Some(Gesture::Progress);
+    }
+    let edge = ((x1 - x0) / 3.0).clamp(0.5, 5.0);
+    Some(if pos.x <= x0 + edge { Gesture::Link } else if pos.x >= x1 - edge { Gesture::Resize } else { Gesture::Move })
+}
+
+/// The chart's input and preview. `rows` is (row height, vertical scroll offset).
+/// `rows` is the row height, the scroll offset and the tasks on display, top to bottom.
+pub fn interact(ui: &mut egui::Ui, body: Rect, scale: &Scale, doc: &Doc, state: &mut Interaction, rows: (f32, f32, &[usize]), resp: &egui::Response) -> Option<Result<GanttEdit, String>> {
+    let (height, scroll, shown) = rows;
+    let mid = |i: usize| {
+        let row = shown.iter().position(|&k| k == i).unwrap_or(usize::MAX / 2);
+        body.top() + row as f32 * height - scroll + height / 2.0
+    };
+    let row_at = |pos: Pos2| {
+        if !body.contains(pos) { return None; }
+        let row = ((pos.y - body.top() + scroll) / height).floor() as usize;
+        shown.get(row).copied()
+    };
+    let (pos, pressed, released, down, ctrl, escape) = ui.input(|i| (
+        i.pointer.interact_pos(), i.pointer.primary_pressed(), i.pointer.primary_released(),
+        i.pointer.primary_down(), i.modifiers.ctrl, i.key_pressed(egui::Key::Escape),
+    ));
+    if escape || state.drag.as_ref().is_some_and(|d| d.version != doc.version()) {
+        state.drag = None;
+        return None;
+    }
+    if let Some(pos) = pos {
+        if let Some(task) = row_at(pos) {
+            if let Some(kind) = zone(doc, scale, task, mid(task), pos, ctrl) {
+                if resp.hovered() && state.drag.is_none() {
+                    ui.ctx().set_cursor_icon(kind.cursor());
+                    resp.clone().on_hover_text_at_pointer(format!("{}\n\n{}", tooltip(doc, task), kind.hint()));
+                    if matches!(kind, Gesture::Progress | Gesture::Link) {
+                        let sch = &doc.schedule[task];
+                        let x0 = scale.x(doc.dt(sch.start));
+                        let x1 = scale.x(doc.dt(sch.finish));
+                        let x = if kind == Gesture::Progress { x0 + (x1 - x0) * doc.project.tasks[task].progress.percent_complete as f32 / 100.0 } else { x0 };
+                        let handle = Rect::from_center_size(Pos2::new(x, mid(task)), Vec2::splat(5.0));
+                        ui.painter_at(body).rect_filled(handle, 0.0, Color32::WHITE);
+                        ui.painter_at(body).rect_stroke(handle, 0.0, Stroke::new(1.0_f32, BAR_EDGE));
+                    }
+                }
+                if pressed && resp.is_pointer_button_down_on() {
+                    state.drag = Some(Drag { task, version: doc.version(), kind, origin: pos,
+                        start: doc.dt(doc.schedule[task].start), finish: doc.dt(doc.schedule[task].finish), moved: false });
+                }
+            } else if resp.hovered() && state.drag.is_none() && bar_hit(doc, scale, task, mid(task), pos) {
+                resp.clone().on_hover_text_at_pointer(tooltip(doc, task));
+            }
+        }
+    }
+    let drag = state.drag.as_mut()?;
+    let Some(pos) = pos else { state.drag = None; return None; };
+    drag.moved |= pos.distance(drag.origin) >= 4.0;
+    if drag.kind == Gesture::Move && (pos.y - drag.origin.y).abs() > height / 2.0 {
+        drag.kind = Gesture::Link;
+    }
+    ui.ctx().set_cursor_icon(if drag.kind == Gesture::Move { egui::CursorIcon::Grabbing } else { drag.kind.cursor() });
+    let delta = ((pos.x - drag.origin.x) / scale.day).round() as i64;
+    let i = drag.task;
+    let mut result = None;
+    let mut ghost = None;
+    let label = match drag.kind {
+        Gesture::Move => match doc.gantt_start(i, drag.start + Duration::days(delta)) {
+            Ok(start) => {
+                if delta != 0 { result = Some(Ok(GanttEdit::Start(i, start))); }
+                let dx = scale.x(start) - scale.x(drag.start);
+                ghost = Some((scale.x(drag.start) + dx, scale.x(drag.finish) + dx));
+                format!("Não iniciar antes de {}", fmt::date(start))
+            }
+            Err(e) => { result = Some(Err(e.clone())); e }
+        },
+        Gesture::Resize => match doc.gantt_duration(i, drag.finish + Duration::days(delta)) {
+            Ok(minutes) => {
+                let finish = drag.finish + Duration::days(delta);
+                result = Some(Ok(GanttEdit::Duration(i, minutes)));
+                ghost = Some((scale.x(drag.start), scale.x(finish)));
+                format!("Duração: {} · Esc cancela", fmt::days(minutes as f64 / crate::doc::DAY as f64))
+            }
+            Err(e) => { result = Some(Err(e.clone())); e }
+        },
+        Gesture::Progress => {
+            let x0 = scale.x(drag.start);
+            let width = scale.x(drag.finish) - x0;
+            let percent = if width > 0.0 { (((pos.x - x0) / width).clamp(0.0, 1.0) * 100.0).round() as u32 }
+                else if pos.x >= x0 { 100 } else { 0 };
+            result = Some(Ok(GanttEdit::Percent(i, percent)));
+            ghost = Some((x0, x0 + width * percent as f32 / 100.0));
+            format!("Concluído: {percent}%")
+        }
+        Gesture::Link => {
+            let target = row_at(pos).filter(|&to| to != i && !doc.project.tasks[to].summary && bar_hit(doc, scale, to, mid(to), pos));
+            let start = Pos2::new(scale.x(drag.finish), mid(i));
+            let p = ui.painter_at(body);
+            let color = if target.is_some() { BAR_EDGE } else { Color32::from_rgb(180, 65, 50) };
+            p.arrow(start, pos - start, Stroke::new(1.5_f32, color));
+            if let Some(to) = target {
+                result = Some(Ok(GanttEdit::Link(i, to)));
+                format!("Término-Início: {} → {}", doc.project.tasks[i].name, doc.project.tasks[to].name)
+            } else { "Solte sobre outra barra para vincular. Esc cancela.".into() }
+        }
+    };
+    if drag.moved {
+        let p = ui.painter_at(body);
+        if let Some((a, b)) = ghost {
+            let r = Rect::from_min_max(Pos2::new(a, mid(i) - 7.0), Pos2::new(b.max(a + 2.0), mid(i) + 7.0));
+            p.rect_filled(r, 0.0, BAR.gamma_multiply(0.3));
+            p.rect_stroke(r, 0.0, Stroke::new(1.5_f32, BAR_EDGE));
+        }
+        egui::Area::new(ui.id().with("gantt-drag-tip")).order(egui::Order::Tooltip).interactable(false)
+            .fixed_pos(pos + Vec2::new(14.0, 18.0)).show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| { ui.label(label); });
+            });
+    }
+    if released {
+        let moved = drag.moved;
+        state.drag = None;
+        return if moved { result } else { None };
+    }
+    if !down { state.drag = None; }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Event, Modifiers, PointerButton, RawInput};
+
+    struct User {
+        ctx: egui::Context,
+        doc: Doc,
+        state: Interaction,
+        time: f64,
+        error: Option<String>,
+    }
+
+    impl User {
+        fn new() -> Self {
+            let mut doc = Doc::blank();
+            doc.set_project_start(NaiveDate::from_ymd_opt(2026, 11, 2).unwrap()).unwrap();
+            doc.add_task("A", 3.0).unwrap();
+            doc.add_task("B", 2.0).unwrap();
+            Self { ctx: egui::Context::default(), doc, state: Interaction::default(), time: 0.0, error: None }
+        }
+
+        fn frame(&mut self, events: Vec<Event>, modifiers: Modifiers) {
+            self.time += 0.05;
+            let input = RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 400.0))), events,
+                modifiers, time: Some(self.time), ..Default::default() };
+            let _ = self.ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let body = Rect::from_min_max(Pos2::new(0.0, 40.0), Pos2::new(1000.0, 400.0));
+                    let scale = Scale::new(&self.doc, 40.0, 0.0);
+                    let resp = ui.interact(body, ui.id().with("chart"), egui::Sense::click_and_drag());
+                    let shown: Vec<usize> = (0..self.doc.project.tasks.len()).collect();
+                    if let Some(edit) = interact(ui, body, &scale, &self.doc, &mut self.state, (24.0, 0.0, &shown), &resp) {
+                        let v = self.doc.begin();
+                        self.error = edit.and_then(|edit| self.doc.edit_gantt(edit)).err();
+                        self.doc.end(v);
+                    }
+                });
+            });
+        }
+
+        fn point(&self, task: usize, fraction: f32) -> Pos2 {
+            let s = Scale::new(&self.doc, 40.0, 0.0);
+            let sch = &self.doc.schedule[task];
+            let x = s.x(self.doc.dt(sch.start)) * (1.0 - fraction) + s.x(self.doc.dt(sch.finish)) * fraction;
+            Pos2::new(x, 52.0 + task as f32 * 24.0)
+        }
+
+        fn press(&mut self, pos: Pos2, modifiers: Modifiers) {
+            self.frame(vec![Event::PointerMoved(pos)], modifiers);
+            self.frame(vec![Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers }], modifiers);
+        }
+
+        fn release(&mut self, pos: Pos2, modifiers: Modifiers) {
+            self.frame(vec![Event::PointerMoved(pos)], modifiers);
+            self.frame(vec![Event::PointerButton { pos, button: PointerButton::Primary, pressed: false, modifiers }], modifiers);
+        }
+    }
+
+    #[test]
+    fn pointer_move_previews_then_commits_once_and_escape_cancels() {
+        let mut u = User::new();
+        let start = u.doc.schedule[0].start;
+        let from = u.point(0, 0.5);
+        u.press(from, Modifiers::NONE);
+        u.frame(vec![Event::PointerMoved(from + Vec2::new(40.0, 0.0))], Modifiers::NONE);
+        assert_eq!(u.doc.schedule[0].start, start);
+        assert!(!u.doc.can_undo());
+        u.release(from + Vec2::new(80.0, 0.0), Modifiers::NONE);
+        assert_eq!(u.doc.dt(u.doc.schedule[0].start), u.doc.dt(start) + Duration::days(2));
+        assert!(u.error.is_none());
+        u.doc.undo().unwrap();
+        assert_eq!(u.doc.schedule[0].start, start);
+        assert!(!u.doc.can_undo());
+        u.press(from, Modifiers::NONE);
+        u.frame(vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }], Modifiers::NONE);
+        u.release(from + Vec2::new(120.0, 0.0), Modifiers::NONE);
+        assert_eq!(u.doc.schedule[0].start, start);
+        assert!(!u.doc.can_undo());
+    }
+
+    #[test]
+    fn pointer_resize_link_and_ctrl_progress_use_separate_zones() {
+        let mut u = User::new();
+        let end = u.point(0, 1.0);
+        u.press(end + Vec2::new(0.0, -4.0), Modifiers::NONE);
+        u.release(end + Vec2::new(80.0, -4.0), Modifiers::NONE);
+        assert_eq!(u.doc.days(0), 5.0);
+        u.doc.undo().unwrap();
+        assert!(!u.doc.can_undo());
+        let from = u.point(0, 0.0);
+        let to = u.point(1, 0.5);
+        u.press(from, Modifiers::NONE);
+        u.release(to, Modifiers::NONE);
+        assert_eq!(u.doc.project.tasks[1].preds[0].pred, 0);
+        u.doc.undo().unwrap();
+        assert!(u.doc.project.tasks[1].preds.is_empty());
+        let middle = u.point(0, 0.5);
+        u.press(middle, Modifiers::NONE);
+        u.release(to, Modifiers::NONE);
+        assert_eq!(u.doc.project.tasks[1].preds[0].pred, 0);
+        u.doc.undo().unwrap();
+        let half = u.point(0, 0.5);
+        u.press(from, Modifiers::CTRL);
+        u.release(half, Modifiers::CTRL);
+        assert_eq!(u.doc.project.tasks[0].progress.percent_complete, 50);
+        u.doc.undo().unwrap();
+        assert_eq!(u.doc.project.tasks[0].progress.percent_complete, 0);
+        assert!(!u.doc.can_undo());
+        u.doc.set_percent(0, 25).unwrap();
+        let edge = u.point(0, 0.25);
+        let three_quarters = u.point(0, 0.75);
+        u.press(edge, Modifiers::NONE);
+        u.release(three_quarters, Modifiers::NONE);
+        assert_eq!(u.doc.project.tasks[0].progress.percent_complete, 75);
+        u.doc.undo().unwrap();
+        assert_eq!(u.doc.project.tasks[0].progress.percent_complete, 25);
+        assert!(!u.doc.can_undo());
+    }
+
+    #[test]
+    fn dropping_a_link_outside_a_bar_or_changing_the_document_cancels() {
+        let mut u = User::new();
+        let from = u.point(0, 0.0);
+        u.press(from, Modifiers::NONE);
+        u.release(Pos2::new(900.0, 300.0), Modifiers::NONE);
+        assert!(u.doc.project.tasks[1].preds.is_empty());
+        assert!(!u.doc.can_undo());
+        let from = u.point(0, 0.5);
+        u.press(from, Modifiers::NONE);
+        u.doc.rename(0, "Alterada durante o arrasto");
+        u.release(from + Vec2::new(80.0, 0.0), Modifiers::NONE);
+        assert_eq!(u.doc.project.tasks[0].constraint, pjsched::model::Constraint::AsSoonAsPossible);
+        assert!(!u.doc.can_undo());
+    }
 }

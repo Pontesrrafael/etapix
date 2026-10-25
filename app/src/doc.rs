@@ -17,6 +17,15 @@ use pjsched::tracking::{save_baseline, tracking, Tracking};
 /// Working minutes in a day of the standard calendar (durations are entered in days).
 pub const DAY: Wm = 480;
 
+/// An edit committed when a Gantt gesture ends. Previews never change the document.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GanttEdit {
+    Start(usize, NaiveDateTime),
+    Duration(usize, Wm),
+    Percent(usize, u32),
+    Link(usize, usize),
+}
+
 pub struct Doc {
     pub project: Project,
     pub path: Option<PathBuf>,
@@ -245,6 +254,86 @@ impl Doc {
         })
     }
 
+    fn gantt_task(&self, i: usize) -> Result<&Task, String> {
+        let t = self.project.tasks.get(i).ok_or("a tarefa não existe mais")?;
+        if t.summary {
+            return Err("edite as subtarefas da tarefa de resumo".into());
+        }
+        Ok(t)
+    }
+
+    /// Snap a dragged start to this task's working calendar, including resource holidays.
+    pub fn gantt_start(&self, i: usize, at: NaiveDateTime) -> Result<NaiveDateTime, String> {
+        let t = self.gantt_task(i)?;
+        if t.progress.actual_start.is_some() {
+            return Err("a tarefa já tem início real; ajuste o andamento antes de movê-la".into());
+        }
+        Ok(self.dt(self.cals.task(i).snap_start(self.cals.clock.at(at))))
+    }
+
+    /// Resize in whole working days, subtracting gaps in a split task.
+    pub fn gantt_duration(&self, i: usize, finish: NaiveDateTime) -> Result<Wm, String> {
+        let t = self.gantt_task(i)?;
+        if t.progress.actual_finish.is_some() {
+            return Err("a tarefa já tem término real; ajuste o andamento antes de redimensioná-la".into());
+        }
+        let tl = self.cals.task(i);
+        let sch = &self.schedule[i];
+        let finish = self.cals.clock.at(finish);
+        let gaps: Wm = sch.segments.windows(2).map(|w| (tl.w(finish.min(w[1].0)) - tl.w(w[0].1)).max(0)).sum();
+        let minutes = (tl.w(finish) - tl.w(sch.start) - gaps).max(0);
+        Ok(((minutes as f64 / DAY as f64).round() as Wm).min(10_000) * DAY)
+    }
+
+    /// Called inside one begin/end pair. Invalid links roll back through apply.
+    pub fn edit_gantt(&mut self, change: GanttEdit) -> Result<(), String> {
+        match change {
+            GanttEdit::Start(i, at) => {
+                let at = self.gantt_start(i, at)?;
+                let t = &self.project.tasks[i];
+                if t.constraint == Constraint::StartNoEarlierThan(at) && t.manual.is_none() && t.leveling_delay == 0 {
+                    return Ok(());
+                }
+                self.apply(|p| {
+                    let t = &mut p.tasks[i];
+                    t.manual = None;
+                    t.constraint = Constraint::StartNoEarlierThan(at);
+                    t.leveling_delay = 0;
+                    Ok(())
+                })
+            }
+            GanttEdit::Duration(i, minutes) => {
+                self.gantt_task(i)?;
+                if self.project.tasks[i].progress.actual_finish.is_some() {
+                    return Err("a tarefa já tem término real".into());
+                }
+                if !(0..=10_000 * DAY).contains(&minutes) || minutes % DAY != 0 {
+                    return Err("use uma duração inteira entre 0 e 10000 dias úteis".into());
+                }
+                if minutes == 0 && self.project.tasks[i].task_type == pjsched::model::TaskType::FixedWork
+                    && self.project.assignments.iter().any(|a| a.task == i) {
+                    return Err("uma tarefa de trabalho fixo com atribuições precisa de ao menos um dia útil".into());
+                }
+                if self.project.tasks[i].duration == minutes { return Ok(()); }
+                self.set_duration_days(i, minutes as f64 / DAY as f64)
+            }
+            GanttEdit::Percent(i, percent) => {
+                let t = self.gantt_task(i)?;
+                if t.progress.percent_complete == percent.min(100) { return Ok(()); }
+                self.set_percent(i, percent)
+            }
+            GanttEdit::Link(from, to) => {
+                self.gantt_task(from)?;
+                self.gantt_task(to)?;
+                if from == to { return Err("uma tarefa não pode depender de si mesma".into()); }
+                if self.project.tasks[to].preds.iter().any(|l| l.pred == from) {
+                    return Err("já existe um vínculo entre essas tarefas".into());
+                }
+                self.link(&[from, to])
+            }
+        }
+    }
+
     /// Assigns resources by name (comma-separated) at 100%, creating unknown ones; names left
     /// out are unassigned. The task type decides what happens to duration and work.
     pub fn set_resources(&mut self, i: usize, names: &str) -> Result<(), String> {
@@ -338,8 +427,7 @@ impl Doc {
         }
     }
 
-    /// Changes so far (see `begin`); tests use it to check that something left the project alone.
-    #[cfg(test)]
+    /// Changes so far (see `begin`); also invalidates a Gantt preview after another edit.
     pub fn version(&self) -> u64 {
         self.version
     }
@@ -575,6 +663,109 @@ fn compute(project: &Project) -> Result<Computed, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn gantt_doc() -> Doc {
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 11, 2).unwrap().and_hms_opt(9, 0, 0).unwrap();
+        let mut p = Project::new(start);
+        p.tasks.push(Task::new(1, 1, "A", 2 * DAY));
+        p.tasks.push(Task::new(2, 2, "B", DAY));
+        Doc::from_project(p, None).unwrap()
+    }
+
+    #[test]
+    fn gantt_move_snaps_to_resource_calendar_sets_snet_and_undoes_once() {
+        let mut d = gantt_doc();
+        d.set_resources(0, "Ana").unwrap();
+        let saturday = d.project.start + Duration::days(5);
+        d.apply(|p| {
+            let mut c = p.calendars[0].clone();
+            c.exceptions.push(pjsched::calendar::Exception { from: saturday.date() + Duration::days(2), to: saturday.date() + Duration::days(2), shifts: vec![] });
+            p.calendars.push(c);
+            p.resources[0].calendar = Some(1);
+            p.tasks[0].manual = Some(p.start);
+            Ok(())
+        }).unwrap();
+        let old = d.schedule[0].start;
+        let snapped = d.gantt_start(0, saturday).unwrap();
+        assert_eq!(snapped, saturday + Duration::days(3));
+        let v = d.begin();
+        d.edit_gantt(GanttEdit::Start(0, saturday)).unwrap();
+        d.end(v);
+        assert_eq!(d.project.tasks[0].constraint, Constraint::StartNoEarlierThan(snapped));
+        assert_eq!(d.dt(d.schedule[0].start), snapped);
+        assert!(d.project.tasks[0].manual.is_none());
+        d.undo().unwrap();
+        assert_eq!(d.schedule[0].start, old);
+        assert!(d.project.tasks[0].manual.is_some());
+        assert!(!d.can_undo());
+        d.redo().unwrap();
+        assert_eq!(d.dt(d.schedule[0].start), snapped);
+    }
+
+    #[test]
+    fn gantt_resize_counts_working_days_and_preserves_fixed_work() {
+        let mut d = gantt_doc();
+        d.set_resources(0, "Ana").unwrap();
+        d.apply(|p| { p.tasks[0].task_type = pjsched::model::TaskType::FixedWork; Ok(()) }).unwrap();
+        let finish = (d.project.start + Duration::days(7)).date().and_hms_opt(18, 0, 0).unwrap();
+        assert_eq!(d.gantt_duration(0, finish).unwrap(), 6 * DAY);
+        let work = d.project.assignments[0].work();
+        let v = d.begin();
+        d.edit_gantt(GanttEdit::Duration(0, 6 * DAY)).unwrap();
+        d.end(v);
+        assert_eq!(d.days(0), 6.0);
+        assert_eq!(d.project.assignments[0].work(), work);
+        d.undo().unwrap();
+        assert_eq!(d.days(0), 2.0);
+        assert!(!d.can_undo());
+        assert!(d.edit_gantt(GanttEdit::Duration(0, -DAY)).is_err());
+        assert!(d.edit_gantt(GanttEdit::Duration(0, DAY + 1)).is_err());
+        assert!(d.edit_gantt(GanttEdit::Duration(0, 0)).is_err());
+        assert!(d.project.assignments[0].work().is_finite());
+    }
+
+    #[test]
+    fn gantt_links_reject_self_duplicate_summary_and_cycles_without_an_undo_step() {
+        let mut d = gantt_doc();
+        let v = d.begin();
+        d.edit_gantt(GanttEdit::Link(0, 1)).unwrap();
+        d.end(v);
+        assert_eq!(d.project.tasks[1].preds[0].kind, LinkType::FinishToStart);
+        let before = d.version();
+        for edit in [GanttEdit::Link(0, 0), GanttEdit::Link(0, 1), GanttEdit::Link(1, 0), GanttEdit::Link(0, 99)] {
+            let v = d.begin();
+            assert!(d.edit_gantt(edit).is_err());
+            d.end(v);
+            assert_eq!(d.version(), before);
+        }
+        d.undo().unwrap();
+        assert!(d.project.tasks[1].preds.is_empty());
+        assert!(d.project.tasks[0].preds.is_empty());
+        assert!(!d.can_undo());
+        d.indent(1).unwrap();
+        assert!(d.edit_gantt(GanttEdit::Link(0, 1)).is_err());
+        assert!(d.gantt_start(0, d.project.start).is_err());
+    }
+
+    #[test]
+    fn gantt_progress_tracks_actuals_and_noops_do_not_add_history() {
+        let mut d = gantt_doc();
+        let v = d.begin();
+        d.edit_gantt(GanttEdit::Percent(0, 100)).unwrap();
+        d.end(v);
+        assert!(d.project.tasks[0].progress.actual_finish.is_some());
+        assert!(d.gantt_start(0, d.project.start).is_err());
+        assert!(d.gantt_duration(0, d.project.start).is_err());
+        let v = d.begin();
+        d.edit_gantt(GanttEdit::Percent(0, 100)).unwrap();
+        d.end(v);
+        d.undo().unwrap();
+        assert_eq!(d.project.tasks[0].progress, pjsched::model::Progress::default());
+        assert!(!d.can_undo());
+        d.edit_gantt(GanttEdit::Percent(0, 50)).unwrap();
+        d.edit_gantt(GanttEdit::Percent(0, 0)).unwrap();
+        assert!(d.project.tasks[0].progress.actual_start.is_none());
+    }
 
     #[test]
     fn build_a_chain_level_and_round_trip_through_mspdi() {
