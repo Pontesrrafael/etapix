@@ -57,8 +57,8 @@ Começar por estes pontos, em ordem:
     predecessoras; Marcos.
   - **Pessoas e custos:** Recursos e atribuições; Nivelamento; Custos.
   - **Acompanhar:** % concluída; Linha de base; Relatórios; Linha do tempo.
-  - **Arquivos:** Abrir e salvar `.mpp` e `.xml`; Trabalhar com o Microsoft Project.
-  - **Exibição:** Zoom e escala de tempo; Colunas e linhas; Fonte; Barras críticas e folga.
+  - **Arquivos:** Abrir e salvar `.mpp` e `.xml`; Salvar sem perder alterações.
+  - **Exibição:** Zoom e escala de tempo; Colunas e linhas; Fonte; Caminho crítico e folga.
   - **Assistentes:** Etapix no Claude e no Codex.
 - Cada cartão mostra ícone (os mesmos de `icons.rs`), título, uma frase com o benefício e as
   ações **Ir para** (abre a aba ou o controle) e **Como usar** (abre a seção do painel).
@@ -69,8 +69,8 @@ Começar por estes pontos, em ordem:
   2. **Primeira operação:** digitar as tarefas, as durações e as predecessoras na grade.
   3. **Acompanhar:** % concluída, linha de base e o relatório Em Andamento.
   4. **Consultar:** Relatório > Painéis e caminho crítico (Formato > Tarefas Críticas).
-- Respeitar o contexto: no Linux, o cartão de `.mpp` explica que o formato não está disponível e
-  indica Project XML; o cartão do Claude Desktop aparece só no Windows.
+- Respeitar o contexto: no Linux, o cartão de `.mpp` informa que `.mpp` abre e salva como no Windows, sem o Project, e
+  o cartão do Claude Desktop aparece só no Windows.
 - Cartões diferentes reutilizam o mesmo tutorial abrindo a seção certa. Por exemplo,
   **Marcos** e **Tarefas e duração** usam o tutorial da aba Tarefa.
 
@@ -372,7 +372,7 @@ por, Detalhes, Janela, Macros, Estilos de Texto, Linhas de Grade, Layout, coluna
 
 **Limitações e permissões:** os relatórios não são impressos nem exportados. Em cinza:
 Introdução, Personalizado, Relatórios Recentes, Comparar Projetos e Relatórios Visuais. Custos
-só aparecem quando os recursos têm taxas, que vêm de arquivos criados no Project.
+só aparecem quando os recursos têm taxas, custo por uso ou atribuições de custo, ou quando as tarefas têm custo fixo (dados lidos e preservados em arquivos `.mpp` e `.xml`).
 
 **Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
 
@@ -456,7 +456,7 @@ apresentando só os grupos com comandos ativos.
 - **Preparar antes de mostrar:** cada etapa declara a aba (`Tab`) e, se for o caso, o modo de
   exibição (`View::Gantt`). O controlador muda a aba e espera um quadro antes de procurar o alvo.
 - **Encontrar o alvo:** o egui não tem DOM. Cada controle apresentável registra o próprio
-  retângulo num mapa `tour_targets: HashMap<&'static str, Rect>`, a cada quadro, com um id estável
+  retângulo via `App::target` num mapa `targets: HashMap<&'static str, Rect>`, a cada quadro, com um id estável
   (veja a seção 8). O tour lê esse mapa no quadro seguinte.
 - **Rolagem e redimensionamento:** como o mapa é atualizado a cada quadro, o destaque acompanha.
   Se o alvo estiver fora da área visível (faixa de opções rolada, grade rolada), o controlador
@@ -494,12 +494,12 @@ Concluir um tour não comprova treinamento nem leitura dos procedimentos.
 
 | Componente | Onde no Etapix | Responsabilidade |
 |---|---|---|
-| Registro de tutoriais | `app/src/help/content.rs` (novo) | Conteúdo em constantes Rust: módulos, versões, procedimentos e etapas. Sem leitura de arquivos externos, para não executar conteúdo arbitrário. |
-| Catálogo | `app/src/help/catalog.rs` (novo), aberto por **Ajuda > Central de Ajuda** | Cartões por grupo, **Ir para** e **Como usar**. |
-| Painel de ajuda | `app/src/help/panel.rs` (novo) | `SidePanel::right` com os procedimentos expansíveis. |
-| Controlador do tour | `app/src/help/tour.rs` (novo) | Etapa atual, preparação de aba, alvo ausente, encerramento. |
+| Registro de tutoriais | `app/src/help/content.rs` | Conteúdo em constantes Rust (`TUTORIALS`, `CATALOG`, `START`): módulos, versões, procedimentos e etapas. Sem leitura de arquivos externos, para não executar conteúdo arbitrário. |
+| Catálogo | `app/src/help/mod.rs` (`App::help_catalog`), aberto por **Ajuda > Central de Ajuda** | Cartões por grupo, **Ir para** e **Como usar**. |
+| Painel de ajuda | `app/src/help/mod.rs` (`App::help_panel`) | `SidePanel::right` (ou janela flutuante abaixo de 900 px) com os procedimentos expansíveis. |
+| Controlador do tour | `app/src/help/mod.rs` (`App::help_tour`, `App::help_banner`) | Etapa atual, preparação de aba, alvo ausente, encerramento e faixa de sugestão na primeira visita. |
 | Camadas visuais | Mesmo módulo, `egui::Area` em `Order::Foreground` | Véu, destaque e balão. |
-| Alvos | `ribbon.rs`, `main.rs` | Cada controle registra `tour_targets.insert("tarefa.inserir", rect)`. |
+| Alvos | `ribbon.rs`, `main.rs` (`App::target`) | Cada controle registra seu retângulo visível em `self.help.targets` a cada quadro. |
 | Progresso e preferências | `fonts::setting` / `fonts::save_settings` (já existem) | Chaves `ajuda_sugerir` e `tour.<id>`. |
 
 Ids estáveis no formato `aba.grupo[.controle]`, independentes de texto e posição. Por exemplo:
@@ -596,7 +596,7 @@ Situação em 22/10/2026. "Teste" indica um teste automático em `app/src/monkey
 - [ ] Foco do teclado no painel e no balão e retorno do foco ao botão: não verificado.
 - [ ] Janela de 1024 × 600 e zoom do Windows a 150%: não verificado. Abaixo de 900 px de largura o
       painel vira janela flutuante (código), sem teste em tela.
-- [x] O cartão de `.mpp` muda o texto no Linux (código; o Linux compila e roda os testes no
+- [x] O cartão de `.mpp` adapta o texto no Linux informando que `.mpp` abre e salva como no Windows sem o Project (código; o Linux compila e roda os testes no
       GitHub).
 - [x] Sugestão, dispensa e conclusão ficam por usuário e por versão (chaves `tour.<id>` e
       `ajuda_sugerir`); os testes usam um arquivo de configurações próprio.

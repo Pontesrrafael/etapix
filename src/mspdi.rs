@@ -1,4 +1,4 @@
-﻿//! Reader for Microsoft Project XML (MSPDI), the documented interchange format.
+//! Reader for Microsoft Project XML (MSPDI), the documented interchange format.
 //!
 //! Units: durations are ISO-8601 (`PT40H0M0S`), link lags and slack are tenths of working
 //! minutes, `LevelingDelay` is tenths of *elapsed* minutes (`LevelingDelayFormat` 8 = "ed").
@@ -324,10 +324,8 @@ fn read_rates(node: Node) -> Result<Vec<Rate>> {
     if rates.is_empty() {
         let epoch = NaiveDate::from_ymd_opt(1984, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap();
         rates.push(rate(node, epoch));
-    } else if let Some(first) = rates.first_mut() {
-        // The first period's per-use cost is written in cents on the resource itself.
-        first.per_use = first.per_use.max(num(node, "CostPerUse") / 100.0);
     }
+    // Explicit periods retain their own amounts; the resource rate reflects another date.
     rates.sort_by_key(|r| r.from);
     Ok(rates)
 }
@@ -626,6 +624,17 @@ mod tests {
         assert_eq!(rates, vec![(48 * 60, "0.333".into()), (24 * 60, "1.000".into())]);
     }
 
+    #[test]
+    fn dated_cost_per_use_is_independent_of_current_resource_rate() {
+        let early = "<Rate><RatesFrom>2026-01-01T00:00:00</RatesFrom><StandardRate>10</StandardRate><OvertimeRate>15</OvertimeRate><CostPerUse>0</CostPerUse></Rate>";
+        let late = "<Rate><RatesFrom>2026-02-01T00:00:00</RatesFrom><StandardRate>10</StandardRate><OvertimeRate>15</OvertimeRate><CostPerUse>100</CostPerUse></Rate>";
+        for (first, second) in [(early, late), (late, early)] {
+            let xml = format!("<Resource xmlns=\"{NS}\"><StandardRate>10</StandardRate><OvertimeRate>15</OvertimeRate><CostPerUse>100</CostPerUse><Rates>{first}{second}</Rates></Resource>");
+            let doc = Document::parse(&xml).unwrap();
+            let rates = read_rates(doc.root_element()).unwrap();
+            assert_eq!(rates.iter().map(|r| r.per_use).collect::<Vec<_>>(), vec![0.0, 1.0]);
+        }
+    }
     #[test]
     fn durations() {
         assert_eq!(parse_duration("PT40H0M0S"), Ok(2400));

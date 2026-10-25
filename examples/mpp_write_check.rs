@@ -122,11 +122,15 @@ fn verify(out: &Path) {
     let (mut ok, mut failed) = (0, 0);
     let mut names: Vec<_> = std::fs::read_dir(out).unwrap().filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "mpp")).collect();
     names.sort();
+    if names.is_empty() {
+        eprintln!("nenhum arquivo .mpp para verificar");
+        std::process::exit(1);
+    }
     for mpp in names {
         let name = mpp.file_stem().unwrap().to_string_lossy().to_string();
         let expected = std::fs::read_to_string(out.join(format!("{name}.expected.txt"))).unwrap();
         let Ok(xml) = std::fs::read_to_string(out.join(format!("{name}.proj.xml"))) else {
-            println!("{name}: o Project não abriu o arquivo");
+            println!("{name}: XML de comparação ausente; abertura/exportação não confirmada");
             failed += 1;
             continue;
         };
@@ -145,4 +149,7 @@ fn verify(out: &Path) {
         }
     }
     println!("{ok} conferem, {failed} diferem");
+    if failed > 0 {
+        std::process::exit(1);
+    }
 }

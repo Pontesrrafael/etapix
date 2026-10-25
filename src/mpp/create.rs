@@ -593,7 +593,10 @@ fn build_assignments(file: &mut cfb::Compound, p: &Project, guids: &Guids, keep:
     let pair = |task: u32, resource: u32| (task as u64) << 32 | resource as u64;
     let mut own = kept_rows(&assignments, keep, |r| pair(u32_at(r, A_TASK), u32_at(r, A_RESOURCE)));
     let mut uid = own.values().map(|r| u32_at(&r.record, A_UID)).max().unwrap_or(0) + 1..;
-    assignments.rows.clear();
+    // Project keeps removed assignments as deleted records; without them it reprices the cost
+    // of tasks it reschedules (as late as possible, constrained) to zero. Deleted records keep no
+    // variable values.
+    let mut deleted: Vec<Row> = assignments.rows.drain(..).filter(|r| !r.is_index() && !r.is_live()).collect();
     // A placeholder keeps the template's GUID for "no resource".
     let mut add = |proto: &Row, task: usize, resource: Option<usize>| {
         let (tu, ru) = (p.tasks[task].uid as u32, resource.map_or(PLACEHOLDER_RESOURCE, |r| p.resources[r].uid as u32));
@@ -620,6 +623,14 @@ fn build_assignments(file: &mut cfb::Compound, p: &Project, guids: &Guids, keep:
             assignments.rows.push(row);
         }
     }
+    let mut removed: Vec<Row> = own.into_values().collect();
+    removed.sort_by_key(|r| u32_at(&r.record, A_UID));
+    for r in &mut removed {
+        r.item[0] = super::ITEM_DELETED;
+        r.vars.clear();
+    }
+    deleted.extend(removed);
+    assignments.rows.splice(0..0, deleted);
     assignments.save(file)
 }
 

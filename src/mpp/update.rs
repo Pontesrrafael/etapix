@@ -3,9 +3,10 @@
 //! (views, formats, custom fields, Project's caches) stays as Project left it.
 //!
 //! The original file is read natively, both versions are compared task by task, and only the
-//! fields that changed are written, plus the dates Etapix scheduled. Changes to the structure
-//! (tasks, links or assignments added or removed, outline, resources, calendars, project
-//! options) are not written yet: [`update_mpp`] refuses them, so the caller can save another way.
+//! fields that changed are written, plus the dates Etapix scheduled: tasks, links, resources,
+//! calendars, assignments, progress, baselines and costs. Tasks, links, resources or assignments
+//! added or removed are refused here; [`super::save_mpp`] then lays the tables out again
+//! ([`super::restructure_mpp`]) and saves through here.
 
 use std::collections::{HashMap, HashSet};
 
@@ -45,11 +46,17 @@ const T_ACTUAL_DURATION: usize = 80;
 /// Where the done work stops (the resume date is `T_RESUME`), and the actual start of a task in
 /// progress.
 const T_STOP: usize = 136;
+// The task's cost and remaining cost (cents), and the item bits that say it has them.
+const T_COST: usize = 32;
+const T_REMAINING_COST: usize = 56;
+const T_COST_BITS: [(usize, u8); 2] = [(16, 4), (16, 7)];
 const T_STARTED_AT: usize = 174;
 /// Progress flags in the FixedMeta item: some work done; not in progress (clear while started
 /// and unfinished).
 const F_SOME_WORK_DONE: (usize, u8) = (44, 3);
 const F_NOT_IN_PROGRESS: (usize, u8) = (18, 5);
+/// An explicit resume date, rather than continuing immediately after completed work.
+const F_RESUME_VALID: (usize, u8) = (17, 1);
 // Flags in a task's FixedMeta item: (byte, bit).
 pub(super) const F_SUMMARY: (usize, u8) = (12, 3);
 /// Manually scheduled, in the Fixed2Meta item.
@@ -72,6 +79,8 @@ const A_STOP: usize = 104;
 /// the task from them.
 const AV_CONTOUR: u16 = 0x31;
 const AV_DONE_CONTOUR: u16 = 0x32;
+/// A cost assignment's span, as a rate table: Project reprices the assignment to zero without it.
+const AV_COST_SPAN: u16 = 0x28C;
 const ASSIGNMENT_VAR_FLAGS: u16 = 0x0F40;
 /// Entry flags of a task's variable data.
 const TASK_VAR_FLAGS: u16 = 0x0B40;
@@ -107,9 +116,18 @@ const A_ACTUAL_WORK: usize = 28;
 /// A cost resource's assignment: its amount at `A_COST` (cents) and again here, and the token
 /// units and work Project gives it.
 const A_REMAINING_COST: usize = 84;
+const A_ACTUAL_COST: usize = 76;
+const A_FINISHED_BIT: (usize, u8) = (10, 4);
+/// A cost resource's assignment carries these in its Fixed2Meta item; without them Project
+/// reprices it to zero when it reschedules the task.
+const A_COST_ITEM2_BITS: [(usize, u8); 3] = [(8, 4), (8, 5), (41, 5)];
 const COST_TOKEN_UNITS: f64 = 6.0;
 const COST_TOKEN_WORK: f64 = 3000.0;
-/// An assignment with work done carries both flags in its FixedMeta item.
+/// The span (working minutes) a cost contour's rate is per.
+const COST_RATE_SPAN: f64 = 960.0;
+/// Set on an assignment's item (byte 13) unless its task is manually scheduled.
+const A_SCHEDULED_BIT: (usize, u8) = (13, 0);
+/// A started assignment (even with no work done yet) carries both flags in its FixedMeta item.
 const A_WORK_DONE_FLAGS: [(usize, u8); 2] = [(10, 3), (14, 2)];
 const C_FIRST: usize = 8;
 // A uniform contour of one segment (72 bytes): rate (units × 160000) at 8, work (thousandths of a
@@ -140,7 +158,8 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     for (old, new) in before.tasks.iter().zip(&after.tasks) {
         let at = tasks.find(T_UID, new.uid as u32).ok_or_else(|| MppError(format!("tarefa {} não encontrada no .mpp", new.uid)))?;
         let progress = dates.assignments.iter().find(|a| a.task == new.uid as u32).map(|a| (a.stop, a.resume));
-        write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid), progress.unwrap_or_default());
+        let rescheduled = dates.assignments.iter().any(|a| a.task == new.uid as u32 && a.rescheduled);
+        write_task(&mut tasks, at, old, new, dates.tasks.get(&new.uid), progress.unwrap_or_default(), rescheduled);
     }
     tasks.save(&mut file)?;
 
@@ -184,14 +203,30 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
     let keeps = |uid: i64| pairs.get(&uid).is_some_and(|&(o, n)| keeps_file_dates(o, n));
     for a in &dates.assignments {
         // Etapix's placeholder assignments (no resource) of tracked tasks go to the file's own, below.
-        if (a.resource as i32) < 0 || keeps(a.task as i64) {
+        // A cost assignment carries no work, so even a task that keeps its own dates takes it.
+        if (a.resource as i32) < 0 || (keeps(a.task as i64) && a.cost.is_none()) {
             continue;
         }
         let at = assignments.find_assignment(a.task, a.resource).ok_or_else(|| MppError("atribuição não encontrada no .mpp".into()))?;
         let material = after.resources.iter().any(|r| r.uid == a.resource as i64 && r.kind == crate::model::ResourceKind::Material);
         let span = pairs.get(&(a.task as i64)).map_or(0, |(_, t)| t.duration) as f64;
         if let Some(cost) = a.cost {
-            assignments.write_cost_assignment(at, a, cost, span);
+            let task = pairs.get(&(a.task as i64)).ok_or_else(|| MppError("tarefa da atribuição não encontrada".into()))?.1;
+            let mut cost_dates = a.clone();
+            let gap = if a.rescheduled {
+                let calendars = crate::calendar::Calendars::new(&after).map_err(|e| MppError(e.0))?;
+                let index = after.tasks.iter().position(|t| t.uid == task.uid).ok_or_else(|| MppError("tarefa da atribuição não encontrada".into()))?;
+                let &(start, finish) = dates.tasks.get(&task.uid).ok_or_else(|| MppError("datas da tarefa de custo não encontradas".into()))?;
+                // A zero-work cost assignment's XML finish omits the split. Its contour
+                // spans the task's full dates, counting the gap on the task's calendar.
+                cost_dates.start = start;
+                cost_dates.finish = finish;
+                let timeline = calendars.task(index);
+                (timeline.w(calendars.clock.at(finish)) - timeline.w(calendars.clock.at(start)) - task.duration).max(0) as f64
+            } else {
+                0.0
+            };
+            assignments.write_cost_assignment(at, &cost_dates, cost, task, gap);
             continue;
         }
         let a = if material { a.as_material(span) } else { a.clone() };
@@ -215,7 +250,23 @@ pub fn update_mpp(original: &[u8], xml: &str) -> Result<Vec<u8>> {
             write_assignment_baseline(&mut assignments, row, b);
         }
     }
+    // Project prices a task charged by a cost resource from the task's own cost, not from its
+    // assignments.
+    // (cost, remaining cost) in cents, summed over the task's assignments.
+    let total = |task: u32, at: usize| (0..assignments.rows.len()).filter(|&k| assignments.is_live_assignment_of(k, task)).map(|k| f64_at(&assignments.data[assignments.rows[k].1.clone()], at)).sum::<f64>();
+    let charged: HashMap<u32, (f64, f64)> = dates.assignments.iter().filter(|a| a.cost.is_some()).map(|a| (a.task, (total(a.task, A_COST), total(a.task, A_REMAINING_COST)))).collect();
     assignments.save(&mut file)?;
+    let mut tasks = Store::load(&file, "TBkndTask");
+    for (&uid, &(cost, remaining)) in &charged {
+        let at = tasks.find(T_UID, uid).ok_or_else(|| MppError(format!("tarefa {uid} não encontrada no .mpp")))?;
+        let r = tasks.record(at);
+        put_f64(r, T_COST, cost);
+        put_f64(r, T_REMAINING_COST, remaining);
+        for bit in T_COST_BITS {
+            set_flag(tasks.item(at), bit, true);
+        }
+    }
+    tasks.save(&mut file)?;
     sync_counts(&mut file)?;
     Ok(file.to_bytes())
 }
@@ -298,7 +349,7 @@ pub(super) fn working_time(c: &Calendar) -> String {
 
 /// Writes task `new` over the record that holds `old`, field by field where they differ, and the
 /// dates Etapix scheduled for it.
-fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Option<&(NaiveDateTime, NaiveDateTime)>, (stop, resume): (Option<NaiveDateTime>, Option<NaiveDateTime>)) {
+fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Option<&(NaiveDateTime, NaiveDateTime)>, (stop, resume): (Option<NaiveDateTime>, Option<NaiveDateTime>), rescheduled: bool) {
     if old.name != new.name {
         tasks.set_text(new.uid as u32, TV_NAME, &new.name);
     }
@@ -373,6 +424,7 @@ fn write_task(tasks: &mut Store, at: usize, old: &Task, new: &Task, dates: Optio
     set_flag(tasks.item2(at), F2_MANUAL, manual);
     let item = tasks.item(at);
     let q = &new.progress;
+    set_flag(item, F_RESUME_VALID, rescheduled);
     set_flag(item, F_SOME_WORK_DONE, q.percent_complete > 0);
     set_flag(item, F_NOT_IN_PROGRESS, q.actual_start.is_none() || q.actual_finish.is_some());
     set_flag(item, F_MILESTONE, new.duration == 0 && !new.summary);
@@ -478,6 +530,35 @@ fn write_resource(resources: &mut Store, at: usize, old: &Resource, new: &Resour
 /// Cost rate table A as Project stores it: the number of periods, a header (16 bytes), then per
 /// period the standard rate, its format, the overtime rate, its format, the cost per use (cents)
 /// and the period's end (tenths of a minute since 1983-12-31); the last one never ends.
+/// The span of a cost assignment as Project keeps it, in the shape of a rate table: a rate of 1
+/// up to a day plus `span` working minutes past the table's epoch, then none (followed by 8 zero
+/// bytes); a milestone's has only the empty period.
+fn cost_span(span: f64) -> Vec<u8> {
+    let period = |rate: f64, end: u32| {
+        let mut e = [0u8; RATE_PERIOD_LEN];
+        put_f64(&mut e, 0, rate);
+        put_u32(&mut e, 8, RATE_PER_HOUR);
+        put_u32(&mut e, 24, RATE_PER_HOUR);
+        put_u32(&mut e, 40, end);
+        e
+    };
+    let mut out = vec![0u8; RATE_TABLE_HEADER];
+    put_u16(&mut out, 2, 4);
+    put_u32(&mut out, 4, RATE_TABLE_HEADER as u32);
+    if span > 0.0 {
+        put_u16(&mut out, 0, 2);
+        out.extend_from_slice(&period(1.0, ((MINUTES_PER_DAY + span) * 10.0) as u32));
+        out.extend_from_slice(&period(0.0, RATES_NEVER_END));
+        out.extend_from_slice(&[0; 8]);
+    } else {
+        put_u16(&mut out, 0, 1);
+        out.extend_from_slice(&period(0.0, RATES_NEVER_END));
+    }
+    out
+}
+
+const MINUTES_PER_DAY: f64 = 1440.0;
+
 pub(super) fn rate_table(r: &Resource) -> Vec<u8> {
     let format = if r.kind == crate::model::ResourceKind::Material { RATE_PER_UNIT } else { RATE_PER_HOUR };
     let mut out = vec![0u8; RATE_TABLE_HEADER];
@@ -580,12 +661,16 @@ struct AssignmentDates {
     cost: Option<f64>,
     /// Part of the work done as overtime (minutes).
     overtime: f64,
+    /// Whether it has an actual start, even with no work done yet.
+    started: bool,
+    /// Whether its task's remaining work was rescheduled to resume after a gap.
+    rescheduled: bool,
 }
 
 impl AssignmentDates {
     /// An assignment that has not started: all its work remains, from its start.
     fn unstarted(task: u32, resource: u32, units: f64, work: f64, start: NaiveDateTime, finish: NaiveDateTime) -> Self {
-        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None, cost: None, overtime: 0.0 }
+        AssignmentDates { task, resource, units, work, start, finish, actual: 0.0, stop: None, resume: None, material_span: None, cost: None, overtime: 0.0, started: false, rescheduled: false }
     }
 
     /// The assignment of a material resource on a task of `span` working minutes: its work is a
@@ -616,11 +701,16 @@ impl Dates {
         let child = |n: roxmltree::Node, tag: &str| n.children().find(|c| c.has_tag_name(tag)).and_then(|c| c.text()).unwrap_or_default().to_string();
         let date = |s: String| parse_datetime(&s).map_err(|e| MppError(e.0));
         let mut out = Dates { tasks: HashMap::new(), assignments: Vec::new() };
+        // Etapix marks the resume as set only on a task whose remaining work resumes after a gap.
+        let mut rescheduled = HashSet::new();
         for n in doc.descendants() {
             if n.has_tag_name("Task") {
                 let uid = child(n, "UID").parse().unwrap_or(-1);
                 if let (Ok(s), Ok(f)) = (date(child(n, "Start")), date(child(n, "Finish"))) {
                     out.tasks.insert(uid, (s, f));
+                }
+                if child(n, "ResumeValid") == "1" {
+                    rescheduled.insert(uid as u32);
                 }
             } else if n.has_tag_name("Assignment") {
                 // Timephased work: type 2 is done, type 1 remaining.
@@ -641,8 +731,13 @@ impl Dates {
                     material_span: None,
                     cost: n.children().find(|c| c.has_tag_name("Cost")).and_then(|c| c.text()).and_then(|c| c.parse::<f64>().ok()).map(|cents| cents / 100.0),
                     overtime: parse_duration(&child(n, "OvertimeWork")).map_or(0.0, |m| m as f64),
+                    started: !child(n, "ActualStart").is_empty(),
+                    rescheduled: false,
                 });
             }
+        }
+        for a in &mut out.assignments {
+            a.rescheduled = rescheduled.contains(&a.task);
         }
         Ok(out)
     }
@@ -776,9 +871,11 @@ impl Store {
         put_date(r, A_RESUME, Some(a.resume.unwrap_or(stop)));
         let item = self.item(row);
         for flag in A_WORK_DONE_FLAGS {
-            set_flag(item, flag, a.actual > 0.0);
+            set_flag(item, flag, a.actual > 0.0 || a.started);
         }
-        if !changed {
+        // Starting at zero work still adds actual-work metadata even when amounts did not change.
+        let needs_actual_contour = a.started && self.var(uid, AV_DONE_CONTOUR).is_none();
+        if !changed && !needs_actual_contour {
             return Ok(());
         }
         let Some(contour) = self.var(uid, AV_CONTOUR) else { return Ok(()) };
@@ -791,50 +888,115 @@ impl Store {
         uniform_segment(&mut contour, C_FIRST, rate, regular_left, a.span(regular_left));
         let tail = closing_copy(rate, regular_left, a.span(regular_left));
         contour[C_TAIL..].copy_from_slice(&tail);
-        if a.actual > 0.0 {
+        // Remaining work that goes on right where the done work stops gets a second closing copy;
+        // remaining work rescheduled to a later resume does not.
+        if a.actual > 0.0 && !a.rescheduled {
             contour.extend_from_slice(&tail);
             contour.extend_from_slice(&[0; 8]);
         }
         self.set_var(uid, AV_CONTOUR, contour);
-        if a.actual > 0.0 {
+        // Started, even with nothing done yet: a done-work contour, empty until work is done.
+        if a.actual > 0.0 || a.started {
             let mut done = vec![0u8; DONE_CONTOUR_LEN];
-            put_u16(&mut done, 0, 1);
             put_u16(&mut done, 2, DONE_SEGMENT_LEN);
             put_u32(&mut done, 4, DONE_TAIL as u32);
-            let rate = a.units * 10_000.0;
-            uniform_segment(&mut done, C_FIRST, rate, a.actual, a.span(a.actual));
-            put_f64(&mut done, DONE_TAIL, a.actual * 1000.0);
-            put_f64(&mut done, DONE_TAIL + 8, rate);
-            put_u32(&mut done, DONE_TAIL + 16, span_code(a.span(a.actual)));
+            if a.actual > 0.0 {
+                put_u16(&mut done, 0, 1);
+                let rate = a.units * 10_000.0;
+                uniform_segment(&mut done, C_FIRST, rate, a.actual, a.span(a.actual));
+                put_f64(&mut done, DONE_TAIL, a.actual * 1000.0);
+                put_f64(&mut done, DONE_TAIL + 8, rate);
+                put_u32(&mut done, DONE_TAIL + 16, span_code(a.span(a.actual)));
+            }
             self.set_or_add_var(uid, AV_DONE_CONTOUR, ASSIGNMENT_VAR_FLAGS, done);
         }
         Ok(())
     }
 
-    /// A cost resource's assignment as Project keeps it: the amount (cents) as cost and remaining
-    /// cost, token units and work, and a cost contour (the amount over the task's `span` minutes).
-    fn write_cost_assignment(&mut self, row: usize, a: &AssignmentDates, cost: f64, span: f64) {
+    /// Cost assignments carry token work. Its actual and remaining shares must follow task
+    /// progress, otherwise Project resets a started task when it recalculates the assignment.
+    /// With a rescheduled gap Project instead keeps all cost remaining, spread across both
+    /// working stretches in a cumulative contour with a zero-rate stretch between them.
+    fn write_cost_assignment(&mut self, row: usize, a: &AssignmentDates, cost: f64, task: &Task, gap: f64) {
+        let span = task.duration as f64;
+        let fraction = task.progress.percent_complete.min(100) as f64 / 100.0;
+        let split = gap > 0.0 && fraction > 0.0 && fraction < 1.0 && task.progress.actual_start.is_some() && task.progress.actual_finish.is_none();
+        let (units, work) = if span > 0.0 { (COST_TOKEN_UNITS, COST_TOKEN_WORK) } else { (0.0, 0.0) };
+        let actual = if split { 0.0 } else { work * fraction };
+        let remaining = work - actual;
+        let started = task.progress.actual_start.is_some() && !split;
+        let finished = task.progress.actual_finish.is_some();
+        let item = self.item(row);
+        set_flag(item, A_SCHEDULED_BIT, task.manual.is_none());
+        for flag in A_WORK_DONE_FLAGS { set_flag(item, flag, started); }
+        set_flag(item, A_FINISHED_BIT, finished);
+        for bit in A_COST_ITEM2_BITS {
+            set_flag(self.item2(row), bit, true);
+        }
         let r = self.record(row);
         let uid = u32_at(r, A_UID);
         put_date(r, A_START, Some(a.start));
         put_date(r, A_FINISH, Some(a.finish));
-        put_date(r, A_STOP, Some(a.start));
-        put_date(r, A_RESUME, Some(a.start));
+        let stop = if split { a.start } else if finished { a.finish } else { a.stop.unwrap_or(a.start) };
+        let resume = if split { a.start } else if finished { a.finish } else { a.resume.unwrap_or(stop) };
+        put_date(r, A_STOP, Some(stop));
+        put_date(r, A_RESUME, Some(resume));
         put_f64(r, A_COST, cost * 100.0);
-        put_f64(r, A_REMAINING_COST, cost * 100.0);
-        put_f64(r, A_UNITS, COST_TOKEN_UNITS);
-        for o in [A_WORK, A_REGULAR_WORK, A_REMAINING_WORK] {
-            put_f64(r, o, COST_TOKEN_WORK);
-        }
+        put_f64(r, A_ACTUAL_COST, if split { 0.0 } else { cost * 100.0 * fraction });
+        put_f64(r, A_REMAINING_COST, if split { cost * 100.0 } else { cost * 100.0 * (1.0 - fraction) });
+        put_f64(r, A_UNITS, units);
+        put_f64(r, A_WORK, work);
+        put_f64(r, A_REGULAR_WORK, work);
+        put_f64(r, A_ACTUAL_WORK, actual);
+        put_f64(r, A_REMAINING_WORK, remaining);
+        let rate = if span > 0.0 { cost * COST_RATE_SPAN / span } else { 0.0 };
         let mut contour = vec![0u8; UNIFORM_CONTOUR_LEN];
-        put_u16(&mut contour, 0, 1);
         put_u16(&mut contour, 2, 0x20);
         put_u32(&mut contour, 4, C_TAIL as u32);
-        put_f64(&mut contour, C_FIRST, cost);
-        put_f64(&mut contour, C_FIRST + 8, COST_TOKEN_WORK);
-        put_u32(&mut contour, C_FIRST + 16, span_code(span));
-        contour[C_TAIL..].copy_from_slice(&closing_copy(cost, COST_TOKEN_WORK / 1000.0, span));
+        if actual > 0.0 { put_u16(&mut contour, 6, 1); }
+        if split {
+            let done_span = span * fraction;
+            let done_work = work * fraction / 1000.0;
+            put_u16(&mut contour, 0, 3);
+            uniform_segment(&mut contour, C_FIRST, rate, work / 1000.0, span + gap);
+            contour.truncate(C_TAIL);
+            contour.extend_from_slice(&closing_copy(rate, done_work, done_span));
+            contour.extend_from_slice(&closing_copy(0.0, done_work, done_span + gap));
+            contour.extend_from_slice(&closing_copy(rate, work / 1000.0, span + gap));
+        } else if remaining > 0.0 {
+            put_u16(&mut contour, 0, 1);
+            uniform_segment(&mut contour, C_FIRST, rate, remaining / 1000.0, span * (1.0 - fraction));
+            let tail = closing_copy(rate, remaining / 1000.0, span * (1.0 - fraction));
+            contour[C_TAIL..].copy_from_slice(&tail);
+            if actual > 0.0 && !a.rescheduled { contour.extend_from_slice(&tail); }
+        } else if actual > 0.0 {
+            put_u32(&mut contour, C_SEGMENTS, 1);
+            put_u32(&mut contour, C_TAIL + 24, span_code(span));
+        }
         self.set_or_add_var(uid, AV_CONTOUR, ASSIGNMENT_VAR_FLAGS, contour);
+        let mut rates = cost_span(if split { span + gap } else { span });
+        if split {
+            let tail = rates.len() - 4;
+            put_u32(&mut rates, tail, span_code(span + gap));
+        }
+        self.set_or_add_var(uid, AV_COST_SPAN, ASSIGNMENT_VAR_FLAGS, rates);
+        if started {
+            let mut done = vec![0u8; DONE_CONTOUR_LEN];
+            put_u16(&mut done, 2, DONE_SEGMENT_LEN);
+            put_u32(&mut done, 4, DONE_TAIL as u32);
+            if actual > 0.0 {
+                put_u16(&mut done, 0, 1);
+                let actual_rate = rate / 16.0;
+                uniform_segment(&mut done, C_FIRST, actual_rate, actual / 1000.0, span * fraction);
+                put_f64(&mut done, DONE_TAIL, actual);
+                put_f64(&mut done, DONE_TAIL + 8, actual_rate);
+                put_u32(&mut done, DONE_TAIL + 16, span_code(span * fraction));
+            }
+            self.set_or_add_var(uid, AV_DONE_CONTOUR, ASSIGNMENT_VAR_FLAGS, done);
+        } else {
+            // Not started (or split, which Project keeps all remaining): no done-work contour.
+            self.remove_var(uid, AV_DONE_CONTOUR);
+        }
     }
 
     fn record(&mut self, row: usize) -> &mut [u8] {
@@ -875,6 +1037,14 @@ impl Store {
             put_u32(&mut self.var_meta, 8, count + 1);
         }
         self.set_var(uid, ty, value);
+    }
+
+    /// Drops an obsolete variable value's index entry, leaving its old data unused.
+    fn remove_var(&mut self, uid: u32, ty: u16) {
+        let Some(entry) = self.var_entry(uid, ty) else { return };
+        self.var_meta.drain(entry..entry + 12);
+        let count = u32_at(&self.var_meta, 8);
+        put_u32(&mut self.var_meta, 8, count - 1);
     }
 
     /// Replaces a text value (UTF-16, zero-terminated).
@@ -951,5 +1121,141 @@ pub(super) fn put_date(b: &mut [u8], o: usize, d: Option<NaiveDateTime>) {
 pub(super) fn set_flag(item: &mut [u8], (byte, bit): (usize, u8), on: bool) {
     if let Some(b) = item.get_mut(byte) {
         *b = if on { *b | 1 << bit } else { *b & !(1 << bit) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rescheduled_cost_matches_project_contour() {
+        use crate::{calendar::Calendars, cpm, model::{Assignment, ResourceKind}, mspdi_write::write_project};
+        // TBkndAssn/0x31, assignment 4, from Project's B6-P8 reference after adding
+        // a cost of 500 (pjsched-ref-p8/depois.mpp). These are cumulative segments:
+        // 750 tokens by minute 480, a zero-rate gap to 1920, then 3000 by 3360.
+        let expected = [
+            0x03, 0x00, 0x20, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x6f, 0x40,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0xa7, 0x40, 0x00, 0x1a, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x70, 0x87, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x6f, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x87, 0x40,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x58, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0xa7, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x40, 0x6f, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1a, 0x04, 0x00,
+        ];
+        for name in ["b6/B6-P8-reagendar", "b7/B7-R3-reagendar-com-recurso"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/mpp-corpus/{name}.mpp"));
+            let original = std::fs::read(path).unwrap();
+            let mut project = read_project(&mpp_to_mspdi(&original).unwrap()).unwrap();
+            let task = project.tasks.iter().position(|t| t.uid == 1).unwrap();
+            let resource = project.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
+            project.resources.push(Resource { uid: resource, name: "Viagem".into(), kind: ResourceKind::Cost, rates: vec![], max_units: 1.0, calendar: None });
+            let mut assignment = Assignment::uniform(task, project.resources.len() - 1, 0.0, project.tasks[task].duration, 0.0);
+            assignment.cost = 500.0;
+            project.assignments.push(assignment);
+            let calendars = Calendars::new(&project).unwrap();
+            let schedule = cpm::schedule(&project, &calendars, None).unwrap();
+            let xml = write_project(&project, &calendars, &schedule, "split cost");
+            for saved in [save_mpp(&original, &xml).unwrap(), create_mpp(&xml).unwrap()] {
+                let file = cfb::Compound::parse(&saved).unwrap();
+                let mut store = Store::load(&file, "TBkndAssn");
+                let row = store.find_assignment(1, resource as u32).unwrap();
+                let record = store.record(row);
+                let uid = u32_at(record, A_UID);
+                assert_eq!(f64_at(record, A_COST), 50000.0, "{name}");
+                assert_eq!(f64_at(record, A_ACTUAL_COST), 0.0, "{name}");
+                assert_eq!(f64_at(record, A_REMAINING_COST), 50000.0, "{name}");
+                assert_eq!(f64_at(record, A_ACTUAL_WORK), 0.0, "{name}");
+                assert_eq!(f64_at(record, A_REMAINING_WORK), 3000.0, "{name}");
+                assert_eq!(date_at(record, A_FINISH), Some(calendars.clock.dt(schedule[task].finish)), "{name}");
+                assert_eq!(date_at(record, A_STOP), date_at(record, A_START), "{name}");
+                assert_eq!(date_at(record, A_RESUME), date_at(record, A_START), "{name}");
+                assert_eq!(store.var(uid, AV_CONTOUR).unwrap(), expected, "{name}");
+                assert!(store.var(uid, AV_DONE_CONTOUR).is_none(), "{name}");
+                let span = store.var(uid, AV_COST_SPAN).unwrap();
+                assert_eq!(u32_at(span, RATE_TABLE_HEADER + 40), 48000, "{name}");
+                assert_eq!(u32_at(span, span.len() - 4), 268800, "{name}");
+                for (byte, bit) in A_WORK_DONE_FLAGS {
+                    assert_eq!(store.item(row)[byte] & (1 << bit), 0, "{name}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cost_progress_matches_project_reference() {
+        use crate::{calendar::Calendars, cpm, mspdi_write::write_project};
+        let reference = include_bytes!("../../tests/mpp-corpus/var/V10-cost-progress.mpp");
+        let project = read_project(include_str!("../../tests/mpp-corpus/var/V10-cost-progress.xml")).unwrap();
+        let calendars = Calendars::new(&project).unwrap();
+        let schedule = cpm::schedule(&project, &calendars, None).unwrap();
+        let saved = create_mpp(&write_project(&project, &calendars, &schedule, "cost progress")).unwrap();
+        let mut expected = Store::load(&cfb::Compound::parse(reference).unwrap(), "TBkndAssn");
+        let mut actual = Store::load(&cfb::Compound::parse(&saved).unwrap(), "TBkndAssn");
+        for task in 1..=5 {
+            let left = expected.find_assignment(task, 1).unwrap();
+            let right = actual.find_assignment(task, 1).unwrap();
+            for offset in [A_WORK, A_ACTUAL_WORK, A_REMAINING_WORK, A_COST, A_ACTUAL_COST, A_REMAINING_COST] {
+                let want = f64_at(expected.record(left), offset);
+                let got = f64_at(actual.record(right), offset);
+                assert!((want - got).abs() < 0.001, "task {task}, offset {offset}: {got} vs {want}");
+            }
+            for offset in [A_START, A_FINISH, A_STOP, A_RESUME] {
+                assert_eq!(date_at(actual.record(right), offset), date_at(expected.record(left), offset), "task {task}, date {offset}");
+            }
+            let expected_uid = u32_at(expected.record(left), A_UID);
+            let actual_uid = u32_at(actual.record(right), A_UID);
+            assert_eq!(actual.var(actual_uid, AV_DONE_CONTOUR), expected.var(expected_uid, AV_DONE_CONTOUR), "task {task}: actual cost contour");
+            let got = actual.var(actual_uid, AV_CONTOUR).unwrap();
+            let want = expected.var(expected_uid, AV_CONTOUR).unwrap();
+            assert_eq!(got, want, "task {task}: remaining cost contour");
+        }
+    }
+    #[test]
+    fn new_files_preserve_explicit_resume_flags() {
+        use crate::{calendar::Calendars, cpm, mspdi_write::write_project};
+        for (name, explicit) in [
+            ("b6/B6-P8-reagendar", true),
+            ("b7/B7-R3-reagendar-com-recurso", true),
+            ("b6/B6-P1-50pct", false),
+            ("b6/B6-P3-inicio-real-atrasado", false),
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/mpp-corpus/{name}.xml"));
+            let project = read_project(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let calendars = Calendars::new(&project).unwrap();
+            let schedule = cpm::schedule(&project, &calendars, None).unwrap();
+            let xml = write_project(&project, &calendars, &schedule, "resume regression");
+            let bytes = create_mpp(&xml).unwrap();
+            let file = cfb::Compound::parse(&bytes).unwrap();
+            let mut tasks = Store::load(&file, "TBkndTask");
+            let row = tasks.find(T_UID, 1).unwrap();
+            let (byte, bit) = F_RESUME_VALID;
+            assert_eq!(tasks.item(row)[byte] & (1 << bit) != 0, explicit, "{name}");
+        }
+    }
+    #[test]
+    fn starting_without_work_creates_the_empty_actual_contour() {
+        let file = cfb::Compound::parse(include_bytes!("../../assets/modelo.mpp")).unwrap();
+        let mut store = Store::load(&file, "TBkndAssn");
+        let row = store.find(A_UID, 3).unwrap();
+        let r = store.record(row);
+        let uid = u32_at(r, A_UID);
+        let mut assignment = AssignmentDates::unstarted(
+            u32_at(r, A_TASK), u32_at(r, A_RESOURCE),
+            f64_at(r, A_UNITS) / 10000.0, f64_at(r, A_WORK) / 1000.0,
+            date_at(r, A_START).unwrap(), date_at(r, A_FINISH).unwrap(),
+        );
+        assert_eq!(f64_at(r, A_ACTUAL_WORK), 0.0);
+        assert!(store.var(uid, AV_DONE_CONTOUR).is_none());
+        assignment.started = true;
+        store.write_assignment(row, &assignment).unwrap();
+        let done = store.var(uid, AV_DONE_CONTOUR).expect("actual start at zero work needs its contour");
+        assert_eq!(done.len(), DONE_CONTOUR_LEN);
+        assert_eq!(u16_at(done, 0), 0);
+        assert!(done[8..].iter().all(|b| *b == 0));
+        for (byte, bit) in A_WORK_DONE_FLAGS {
+            assert_ne!(store.item(row)[byte] & (1 << bit), 0);
+        }
     }
 }

@@ -89,12 +89,14 @@ pub fn baseline(p: &mut Project) {
     pjsched::tracking::save_baseline(p, &cals, &schedule, &costs);
 }
 
-/// A cost resource (a trip) charging 500 on the first task that is an ordinary one: not a summary,
-/// a milestone, started, or scheduled as late as possible (those cases are still to check).
+/// A cost resource (a trip) charging 500 on tasks.
 #[allow(dead_code)] // not every test binary uses every edit set
 pub fn add_cost(p: &mut Project) {
-    let ordinary = |t: &Task| !t.summary && t.duration > 0 && t.progress.actual_start.is_none() && t.constraint != Constraint::AsLateAsPossible;
-    let Some(task) = p.tasks.iter().position(ordinary) else { return };
+    // Every task but summaries: started, manual, late tasks and milestones included.
+    let charged: Vec<usize> = (0..p.tasks.len()).filter(|&k| !p.tasks[k].summary).collect();
+    if charged.is_empty() {
+        return;
+    }
     let uid = p.resources.iter().map(|r| r.uid).max().unwrap_or(0) + 1;
     p.resources.push(pjsched::model::Resource {
         uid,
@@ -104,9 +106,11 @@ pub fn add_cost(p: &mut Project) {
         max_units: 1.0,
         calendar: None,
     });
-    let mut a = pjsched::model::Assignment::uniform(task, p.resources.len() - 1, 0.0, p.tasks[task].duration, 0.0);
-    a.cost = 500.0;
-    p.assignments.push(a);
+    for task in charged {
+        let mut a = pjsched::model::Assignment::uniform(task, p.resources.len() - 1, 0.0, p.tasks[task].duration, 0.0);
+        a.cost = 500.0;
+        p.assignments.push(a);
+    }
 }
 
 /// Resources edited: renamed, with more units, and with their rates raised a month in.

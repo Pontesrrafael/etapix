@@ -59,12 +59,12 @@ next to the Gantt chart, and status bar. It leaves `.mpp`/`.xml` file associatio
   the compound-file container, `src/mpp.rs` decodes Project's tables into Project XML). The reader
   is checked against the XML Project itself saves of 200+ files (`tests/mpp_native.rs`).
 - Saving into a `.mpp` is native too (`src/mpp/update.rs`): the changed fields of tasks,
-  resources, calendars and assignments, progress, baselines, overtime and cost amounts, and the
+  resources, calendars and assignments, progress (including started tasks at 0% and explicit `ResumeValid` flags on split tasks), baselines, overtime and cost amounts (including cost assignments across started, manual, constrained/ALAP and split rescheduled tasks, with rate-span metadata and task cost rollup), and the
   scheduled dates go into the file's own tables, and everything else (views, formats, custom
   fields) stays as Project left it. Tasks, links, resources and assignments added or removed
-  keep the file's own records and take new ones from the template (`src/mpp/create.rs`,
+  keep the file's own records, retain removed assignments as deleted records so Project preserves rescheduled task costs, and take new ones from the template (`src/mpp/create.rs`,
   `restructure_mpp`). Checked by `tests/mpp_update.rs` and, against Project itself, by
-  `examples/mpp_write_check.rs` (one mode per kind of change) with `tools/mpp_to_xml.ps1`.
+  `examples/mpp_write_check.rs` (nine modes: `prepare`, `prepare-new`, `prepare-structure`, `prepare-progress`, `prepare-baseline`, `prepare-cost`, `prepare-resources`, `prepare-calendars`, `prepare-overtime`, plus `verify`) with `tools/mpp_to_xml.ps1`.
 - New `.mpp` files are native as well (`src/mpp/create.rs`): Etapix clones the records of a
   template Project made (`assets/modelo.mpp`, built by `tools/mpp_template.ps1`) for every task,
   link, resource, calendar and assignment, ties them together with their GUIDs, and lets the edit
@@ -136,7 +136,9 @@ The script writes `dist\etapix-setup-<version>.exe`. The UI crates need an assem
 | `tracking` | Baselines (save and read baseline 0), start/finish/work variances and earned value at the status date (BCWS, BCWP, ACWP, CV, SV). |
 | `edit` | How Project recalculates duration, units and work when you add or remove a resource or change duration, units or work. It covers the fixed units, fixed duration and fixed work task types, with and without effort-driven scheduling. |
 | `leveling` | Serial list scheduling, resource by resource, of assignments (Project's default "level individual assignments") or whole tasks, with the ID, Standard and Priority/Standard orders, day/week/hour bases, splitting (also of a single uneven assignment), priority 1000, a leveling date range and "within available slack". Each assignment occupies its resource only while it works. |
-| `mspdi` | Reads MSPDI input and the results Project computed. |
+| `cfb` | Reads and writes the Compound File Binary (OLE2) container used by `.mpp` files. |
+| `mpp` | Native `.mpp` reader (`src/mpp.rs`), in-place and restructured `.mpp` updater (`src/mpp/update.rs`), and template-based `.mpp` creator (`src/mpp/create.rs`). |
+| `mspdi` | Reads MSPDI input and the results Project computed (including dated resource rate periods with independent per-use costs and `ResumeValid` on rescheduled tasks). |
 | `mspdi_write` | Writes MSPDI that Project reopens and recalculates to the same schedule. Element order follows the schema, `ProjectExternallyEdited` is 0, and `HonorConstraints` is 0, which is how Project itself writes "honor constraints" on. Tasks in progress get timephased progress, and those without resources get Project's placeholder assignment (resource -65535), which carries the actual and remaining work per day. |
 
 ## Covered
