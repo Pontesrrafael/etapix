@@ -51,3 +51,32 @@ fn new_files_read_back_as_saved() {
     assert!(created > 120, "only {created} of {} projects created", files.len());
     assert!(failures.is_empty(), "{} files differ:\n{}", failures.len(), failures.join("\n"));
 }
+
+/// A string property (author, last saved by) of the document summary, or `None` if absent.
+fn summary_text(summary: &[u8], pid: u32) -> Option<String> {
+    let u32_at = |o: usize| summary.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let section = u32_at(44)? as usize;
+    let count = u32_at(section + 4)? as usize;
+    (0..count).find_map(|k| {
+        let entry = section + 8 + 8 * k;
+        (u32_at(entry)? == pid).then_some(())?;
+        let at = section + u32_at(entry + 4)? as usize;
+        let len = u32_at(at + 4)? as usize;
+        let text = summary.get(at + 8..at + 8 + len)?;
+        Some(String::from_utf8_lossy(text).trim_end_matches('\0').to_string())
+    })
+}
+
+/// New files carry no one's name: the template's author and last-saved-by are empty, so a file
+/// a person creates is not attributed to whoever made the template.
+#[test]
+fn new_files_have_no_author() {
+    const AUTHOR: u32 = 4;
+    const LAST_SAVED_BY: u32 = 8;
+    let xml = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/b1").read_dir().unwrap().map(|e| e.unwrap().path()).find(|p| p.extension().is_some_and(|x| x == "xml")).unwrap()).unwrap();
+    let file = pjsched::cfb::read_streams(&create_mpp(&xml).unwrap()).unwrap();
+    let summary = file.iter().find(|(k, _)| k.ends_with("\u{5}SummaryInformation")).map(|(_, v)| v).unwrap();
+    for pid in [AUTHOR, LAST_SAVED_BY] {
+        assert_eq!(summary_text(summary, pid).unwrap_or_default(), "", "propriedade {pid} do resumo");
+    }
+}
