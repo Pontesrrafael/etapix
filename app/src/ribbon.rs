@@ -4,11 +4,8 @@
 
 use eframe::egui;
 
-use super::{big_button, column, group, small_button, small_button_response, Act, App, Report, Tab, View};
+use super::{big_button, column, group, small_button, small_button_response, soon, soon_big, Act, App, Report, Tab, View};
 use crate::icons::Icon;
-
-/// A button that is not implemented yet: drawn disabled.
-const OFF: bool = false;
 
 impl App {
     pub(super) fn ribbon(&mut self, ui: &mut egui::Ui) -> Vec<Act> {
@@ -82,7 +79,7 @@ impl App {
                 if small_button(ui, Icon::Copy, "Copiar", has) {
                     acts.push(Act::Copy);
                 }
-                small_button(ui, Icon::Brush, "Pincel de Formatação", OFF);
+                soon(ui, Icon::Brush, "Pincel de Formatação");
             });
         });
         group(ui, "Fonte", |ui| {
@@ -91,7 +88,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     for icon in [Icon::Bold, Icon::Italic, Icon::Underline] {
-                        small_button(ui, icon, "", OFF);
+                        soon(ui, icon, "");
                     }
                 });
             });
@@ -129,7 +126,7 @@ impl App {
                 if small_button(ui, Icon::Respect, "Respeitar Vínculos", has) {
                     acts.push(Act::RespectLinks);
                 }
-                small_button(ui, Icon::Inactive, "Inativar", OFF);
+                soon(ui, Icon::Inactive, "Inativar");
             });
         });
         self.target(ui, "tarefa.cronograma", rect);
@@ -141,7 +138,7 @@ impl App {
                 acts.push(Act::Manual(false));
             }
             column(ui, |ui| {
-                small_button(ui, Icon::Inspect, "Inspecionar", OFF);
+                soon(ui, Icon::Inspect, "Inspecionar");
                 let mover = small_button_response(ui, Icon::Move, "Mover ▾", has);
                 let id = ui.make_persistent_id("mover");
                 if has && mover.clicked() {
@@ -162,7 +159,7 @@ impl App {
                         }
                     }
                 });
-                small_button(ui, Icon::Mode, "Modo", OFF);
+                soon(ui, Icon::Mode, "Modo");
             });
         });
         self.target(ui, "tarefa.tarefas", rect);
@@ -177,7 +174,7 @@ impl App {
                 if small_button(ui, Icon::Milestone, "Marco", true) {
                     acts.push(Act::InsertMilestone);
                 }
-                small_button(ui, Icon::Deliverable, "Entregável", OFF);
+                soon(ui, Icon::Deliverable, "Entregável");
             });
         });
         self.target(ui, "tarefa.inserir", rect);
@@ -186,8 +183,8 @@ impl App {
                 acts.push(Act::Info);
             }
             column(ui, |ui| {
-                small_button(ui, Icon::Notes, "Anotações", OFF);
-                small_button(ui, Icon::Details, "Detalhes", OFF);
+                soon(ui, Icon::Notes, "Anotações");
+                soon(ui, Icon::Details, "Detalhes");
                 if small_button(ui, Icon::TimelineAdd, "Adicionar à Linha do Tempo", has) {
                     acts.push(Act::AddTimeline);
                 }
@@ -205,20 +202,20 @@ impl App {
                 if small_button(ui, Icon::Eraser, "Limpar", has) {
                     acts.push(Act::Delete);
                 }
-                small_button(ui, Icon::Fill, "Preencher", OFF);
+                soon(ui, Icon::Fill, "Preencher");
             });
         });
     }
 
     fn resource_tab(&mut self, ui: &mut egui::Ui, acts: &mut Vec<Act>, has: bool) {
         group(ui, "Exibir", |ui| {
-            big_button(ui, Icon::Team, "Organizador\nde Equipe", OFF);
+            soon_big(ui, Icon::Team, "Organizador\nde Equipe");
         });
         let rect = group(ui, "Atribuições", |ui| {
             if big_button(ui, Icon::Assign, "Atribuir\nRecursos", has) {
                 acts.push(Act::Assign);
             }
-            big_button(ui, Icon::Pool, "Pool de\nRecursos", OFF);
+            soon_big(ui, Icon::Pool, "Pool de\nRecursos");
         });
         self.target(ui, "recurso.atribuicoes", rect);
         let rect = group(ui, "Inserir", |ui| {
@@ -228,10 +225,10 @@ impl App {
         });
         self.target(ui, "recurso.inserir", rect);
         group(ui, "Propriedades", |ui| {
-            big_button(ui, Icon::Info, "Informações", OFF);
+            soon_big(ui, Icon::Info, "Informações");
             column(ui, |ui| {
-                small_button(ui, Icon::Notes, "Anotações", OFF);
-                small_button(ui, Icon::Details, "Detalhes", OFF);
+                soon(ui, Icon::Notes, "Anotações");
+                soon(ui, Icon::Details, "Detalhes");
             });
         });
         let rect = group(ui, "Nível", |ui| {
@@ -245,11 +242,11 @@ impl App {
                 acts.push(Act::Level);
             }
             column(ui, |ui| {
-                small_button(ui, Icon::Options, "Opções de Nivelamento", OFF);
+                soon(ui, Icon::Options, "Opções de Nivelamento");
                 if small_button(ui, Icon::Clear, "Limpar Nivelamento", true) {
                     acts.push(Act::ClearLevel);
                 }
-                small_button(ui, Icon::NextOver, "Próxima Superalocação", OFF);
+                soon(ui, Icon::NextOver, "Próxima Superalocação");
             });
         });
         self.target(ui, "recurso.nivel", rect);
@@ -260,35 +257,35 @@ impl App {
             if big_button(ui, Icon::Gantt, "Gráfico de\nGantt", true) {
                 acts.push(Act::View(View::Gantt));
             }
-            big_button(ui, Icon::Usage, "Uso da\nTarefa", OFF);
+            soon_big(ui, Icon::Usage, "Uso da\nTarefa");
             column(ui, |ui| {
-                small_button(ui, Icon::Network, "Diagrama de Rede", OFF);
-                small_button(ui, Icon::Month, "Calendário", OFF);
+                soon(ui, Icon::Network, "Diagrama de Rede");
+                soon(ui, Icon::Month, "Calendário");
                 if small_button(ui, Icon::Sheet, "Planilha de Tarefas", true) {
                     acts.push(Act::View(View::Sheet));
                 }
             });
         });
         group(ui, "Modos de Exibição de Recurso", |ui| {
-            big_button(ui, Icon::Team, "Organizador\nde Equipe", OFF);
-            big_button(ui, Icon::Usage, "Uso do\nRecurso", OFF);
+            soon_big(ui, Icon::Team, "Organizador\nde Equipe");
+            soon_big(ui, Icon::Usage, "Uso do\nRecurso");
             column(ui, |ui| {
                 if small_button(ui, Icon::Sheet, "Planilha de Recursos", true) {
                     acts.push(Act::Report(Report::Resources));
                 }
-                small_button(ui, Icon::Options, "Outros Modos de Exibição", OFF);
+                soon(ui, Icon::Options, "Outros Modos de Exibição");
             });
         });
         group(ui, "Dados", |ui| {
             column(ui, |ui| {
-                small_button(ui, Icon::Sort, "Classificar", OFF);
-                small_button(ui, Icon::Outline, "Estrutura de Tópicos", OFF);
-                small_button(ui, Icon::Tables, "Tabelas", OFF);
+                soon(ui, Icon::Sort, "Classificar");
+                soon(ui, Icon::Outline, "Estrutura de Tópicos");
+                soon(ui, Icon::Tables, "Tabelas");
             });
             column(ui, |ui| {
-                small_button(ui, Icon::Highlight, "[Sem Realce]", OFF);
-                small_button(ui, Icon::Filter, "[Sem Filtro]", OFF);
-                small_button(ui, Icon::Group, "[Sem Grupo]", OFF);
+                soon(ui, Icon::Highlight, "[Sem Realce]");
+                soon(ui, Icon::Filter, "[Sem Filtro]");
+                soon(ui, Icon::Group, "[Sem Grupo]");
             });
         });
         let rect = group(ui, "Zoom", |ui| {
@@ -333,35 +330,35 @@ impl App {
         });
         self.target(ui, "exibir.modo_divisao", rect);
         group(ui, "Janela", |ui| {
-            big_button(ui, Icon::NewWindow, "Nova\nJanela", OFF);
+            soon_big(ui, Icon::NewWindow, "Nova\nJanela");
             column(ui, |ui| {
-                small_button(ui, Icon::Switch, "Alternar Janelas", OFF);
-                small_button(ui, Icon::Arrange, "Organizar Tudo", OFF);
-                small_button(ui, Icon::Hide, "Ocultar", OFF);
+                soon(ui, Icon::Switch, "Alternar Janelas");
+                soon(ui, Icon::Arrange, "Organizar Tudo");
+                soon(ui, Icon::Hide, "Ocultar");
             });
         });
         group(ui, "Macros", |ui| {
-            big_button(ui, Icon::Macro, "Macros", OFF);
+            soon_big(ui, Icon::Macro, "Macros");
         });
     }
 
     fn format_tab(&mut self, ui: &mut egui::Ui) {
         group(ui, "Formatar", |ui| {
-            big_button(ui, Icon::Text, "Estilos de\nTexto", OFF);
+            soon_big(ui, Icon::Text, "Estilos de\nTexto");
             column(ui, |ui| {
-                small_button(ui, Icon::Grid, "Linhas de Grade", OFF);
-                small_button(ui, Icon::Layout, "Layout", OFF);
+                soon(ui, Icon::Grid, "Linhas de Grade");
+                soon(ui, Icon::Layout, "Layout");
             });
         });
         group(ui, "Colunas", |ui| {
-            big_button(ui, Icon::Column, "Inserir\nColuna", OFF);
+            soon_big(ui, Icon::Column, "Inserir\nColuna");
             column(ui, |ui| {
-                small_button(ui, Icon::Options, "Configurações de Coluna", OFF);
-                small_button(ui, Icon::Fields, "Campos Personalizados", OFF);
+                soon(ui, Icon::Options, "Configurações de Coluna");
+                soon(ui, Icon::Fields, "Campos Personalizados");
             });
         });
         let rect = group(ui, "Estilos de Barra", |ui| {
-            big_button(ui, Icon::Format, "Formatar", OFF);
+            soon_big(ui, Icon::Format, "Formatar");
             column(ui, |ui| {
                 ui.checkbox(&mut self.gantt_opts.critical, "Tarefas Críticas");
                 ui.checkbox(&mut self.gantt_opts.slack, "Margem de Atraso");
@@ -380,7 +377,7 @@ impl App {
             });
         });
         group(ui, "Desenhos", |ui| {
-            big_button(ui, Icon::Drawing, "Desenho", OFF);
+            soon_big(ui, Icon::Drawing, "Desenho");
         });
     }
 }
@@ -397,35 +394,35 @@ fn report_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egui
                 acts.push(Act::Report(report));
             }
         }
-        big_button(ui, Icon::Intro, "Introdução", OFF);
-        big_button(ui, Icon::Custom, "Personalizado", OFF);
-        big_button(ui, Icon::Recent, "Relatórios\nRecentes", OFF);
+        soon_big(ui, Icon::Intro, "Introdução");
+        soon_big(ui, Icon::Custom, "Personalizado");
+        soon_big(ui, Icon::Recent, "Relatórios\nRecentes");
     });
     group(ui, "Projeto", |ui| {
-        big_button(ui, Icon::Compare, "Comparar\nProjetos", OFF);
+        soon_big(ui, Icon::Compare, "Comparar\nProjetos");
     });
     group(ui, "Exportar", |ui| {
-        big_button(ui, Icon::Export, "Relatórios\nVisuais", OFF);
+        soon_big(ui, Icon::Export, "Relatórios\nVisuais");
     });
     vec![("relatorio.exibir", reports)]
 }
 
 fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egui::Rect)> {
     group(ui, "Inserir", |ui| {
-        big_button(ui, Icon::Subproject, "Subprojeto", OFF);
+        soon_big(ui, Icon::Subproject, "Subprojeto");
     });
     group(ui, "Suplementos", |ui| {
-        big_button(ui, Icon::AddIn, "Obter\nSuplementos", OFF);
+        soon_big(ui, Icon::AddIn, "Obter\nSuplementos");
     });
     let properties = group(ui, "Propriedades", |ui| {
         if big_button(ui, Icon::Info, "Informações\ndo Projeto", true) {
             acts.push(Act::ProjectInfo);
         }
-        big_button(ui, Icon::Fields, "Campos\nPersonalizados", OFF);
-        big_button(ui, Icon::Links, "Vínculos Entre\nProjetos", OFF);
+        soon_big(ui, Icon::Fields, "Campos\nPersonalizados");
+        soon_big(ui, Icon::Links, "Vínculos Entre\nProjetos");
         column(ui, |ui| {
-            small_button(ui, Icon::Wbs, "EAP", OFF);
-            small_button(ui, Icon::WorkTime, "Alterar Período de Trabalho", OFF);
+            soon(ui, Icon::Wbs, "EAP");
+            soon(ui, Icon::WorkTime, "Alterar Período de Trabalho");
         });
     });
     let schedule = group(ui, "Cronograma", |ui| {
@@ -441,12 +438,12 @@ fn project_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) -> Vec<(&'static str, egu
     });
     group(ui, "Status", |ui| {
         column(ui, |ui| {
-            small_button(ui, Icon::StatusDate, "Data de Status: NA", OFF);
-            small_button(ui, Icon::Update, "Atualizar Projeto", OFF);
+            soon(ui, Icon::StatusDate, "Data de Status: NA");
+            soon(ui, Icon::Update, "Atualizar Projeto");
         });
     });
     group(ui, "Revisão", |ui| {
-        big_button(ui, Icon::Spelling, "Ortografia", OFF);
+        soon_big(ui, Icon::Spelling, "Ortografia");
     });
     vec![("projeto.propriedades", properties), ("projeto.cronograma", schedule)]
 }

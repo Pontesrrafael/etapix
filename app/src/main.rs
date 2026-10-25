@@ -932,7 +932,28 @@ fn draw_centered(p: &egui::Painter, lines: Vec<std::sync::Arc<egui::Galley>>, ce
 /// Drawn over the icon of a disabled button.
 const FADE: Color32 = Color32::from_rgba_premultiplied(150, 153, 154, 155);
 
-const NOT_YET: &str = "Indisponível agora: precisa de uma seleção, ou o Etapix ainda não tem este comando.";
+const NOT_YET: &str = "Indisponível agora: selecione uma tarefa (ou mais de uma, para vincular).";
+/// The tooltip of a command Project has and Etapix does not have yet.
+const SOON: &str = "Em breve no Etapix: este comando ainda não existe.";
+
+/// A ribbon button for a command Etapix does not have yet: drawn disabled, saying so.
+fn soon(ui: &mut egui::Ui, icon: Icon, label: &str) {
+    SOON_TIP.with(|c| c.set(true));
+    small_button(ui, icon, label, false);
+    SOON_TIP.with(|c| c.set(false));
+}
+
+/// [`soon`] for a large button.
+fn soon_big(ui: &mut egui::Ui, icon: Icon, label: &str) {
+    SOON_TIP.with(|c| c.set(true));
+    big_button(ui, icon, label, false);
+    SOON_TIP.with(|c| c.set(false));
+}
+
+/// The tooltip of a disabled button.
+fn disabled_tip() -> &'static str {
+    if SOON_TIP.with(|c| c.get()) { SOON } else { NOT_YET }
+}
 
 fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool {
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
@@ -948,7 +969,7 @@ fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> bool
     draw_centered(p, label, rect.center().x, (rect.top() + 38.0).min(rect.bottom() - size.y), color);
     if !enabled {
         p.rect_filled(Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 20.0), Vec2::splat(30.0)), 0.0, FADE);
-        resp.on_hover_text(NOT_YET);
+        resp.on_hover_text(disabled_tip());
         return false;
     }
     resp.clicked()
@@ -991,10 +1012,12 @@ fn small_button_response(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bo
     let color = if enabled { TEXT } else { Color32::from_gray(160) };
     p.galley_with_override_text_color(Pos2::new(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0), galley, color);
     let resp = if compact { resp.on_hover_text(label) } else { resp };
-    if enabled { resp } else { resp.on_hover_text(NOT_YET) }
+    if enabled { resp } else { resp.on_hover_text(disabled_tip()) }
 }
 
 thread_local! {
+    /// Set while drawing a button for a command Etapix does not have yet.
+    static SOON_TIP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Set while drawing a ribbon tab that does not fit the window at full size.
     static COMPACT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -1274,7 +1297,7 @@ impl App {
         let summary = row < self.n() && self.doc.project.tasks[row].summary;
         match col {
             Col::Name => true,
-            Col::Dur | Col::Start | Col::Pred | Col::Res => !summary,
+            Col::Dur | Col::Start | Col::Finish | Col::Pred | Col::Res => !summary,
             _ => false,
         }
     }
@@ -1285,7 +1308,7 @@ impl App {
         }
         let text = text.unwrap_or_else(|| {
             let t = self.cell_text(row, col);
-            if col == Col::Start { t.rsplit(' ').next().unwrap_or("").to_string() } else { t }
+            if matches!(col, Col::Start | Col::Finish) { t.rsplit(' ').next().unwrap_or("").to_string() } else { t }
         });
         self.editing = Some(Editing { row, col, text, fresh: true });
     }
@@ -1303,12 +1326,12 @@ impl App {
         let text = e.text.trim().to_string();
         let mut row = e.row;
         // Clearing a duration or a date keeps the current value, as Project does.
-        if text.is_empty() && matches!(e.col, Col::Dur | Col::Start) {
+        if text.is_empty() && matches!(e.col, Col::Dur | Col::Start | Col::Finish) {
             return row;
         }
         let invalid = match e.col {
             Col::Dur if fmt::parse_days(&text).is_none() => Some(format!("Duração inválida: {text} (use, por exemplo, 3 ou 2,5 dias)")),
-            Col::Start if fmt::parse_date(&text).is_none() => Some(format!("Data inválida: {text} (use dd/mm/aa)")),
+            Col::Start | Col::Finish if fmt::parse_date(&text).is_none() => Some(format!("Data inválida: {text} (use dd/mm/aa)")),
             _ => None,
         };
         if let Some(m) = invalid {
@@ -1340,6 +1363,10 @@ impl App {
             },
             Col::Start => match fmt::parse_date(&text) {
                 Some(d) => self.doc.set_start(row, d),
+                None => Err(format!("Data inválida: {text} (use dd/mm/aa)")),
+            },
+            Col::Finish => match fmt::parse_date(&text) {
+                Some(d) => self.doc.set_finish(row, d),
                 None => Err(format!("Data inválida: {text} (use dd/mm/aa)")),
             },
             Col::Pred => self.doc.set_predecessors(row, &text),
@@ -1420,6 +1447,10 @@ impl App {
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
         for ev in events {
             match ev {
+                // egui turns Ctrl+C, Ctrl+X and Ctrl+V into these events on most platforms.
+                egui::Event::Copy => acts.push(Act::Copy),
+                egui::Event::Cut => acts.push(Act::Cut),
+                egui::Event::Paste(_) => acts.push(Act::Paste),
                 egui::Event::Text(t) if !mods.ctrl => {
                     self.begin_edit(self.cursor.0, self.cursor.1, Some(t));
                     return;
@@ -1436,6 +1467,9 @@ impl App {
                     Key::F2 => self.begin_edit(self.cursor.0, self.cursor.1, None),
                     Key::Delete => acts.push(Act::Delete),
                     Key::Insert => acts.push(Act::InsertTask),
+                    Key::C if modifiers.ctrl => acts.push(Act::Copy),
+                    Key::X if modifiers.ctrl => acts.push(Act::Cut),
+                    Key::V if modifiers.ctrl => acts.push(Act::Paste),
                     Key::S if modifiers.ctrl => acts.push(Act::Save),
                     Key::Z if modifiers.ctrl => acts.push(Act::Undo),
                     Key::Y if modifiers.ctrl => acts.push(Act::Redo),

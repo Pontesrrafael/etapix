@@ -387,6 +387,18 @@ impl Doc {
         })
     }
 
+    /// Sets the finish, as typing in Project's Término column does: the duration becomes the
+    /// working time from the task's start to the end of that day, on the task's calendar.
+    pub fn set_finish(&mut self, i: usize, date: chrono::NaiveDate) -> Result<(), String> {
+        if date < self.dt(self.schedule[i].start).date() {
+            return Err("o término não pode ser antes do início da tarefa".into());
+        }
+        let (clock, tl) = (&self.cals.clock, self.cals.task(i));
+        let end = tl.w(clock.at(date.and_hms_opt(0, 0, 0).unwrap() + Duration::days(1)));
+        let worked = (end - tl.w(self.schedule[i].start)).max(0);
+        self.set_duration_days(i, worked as f64 / DAY as f64)
+    }
+
     /// Replaces the task's predecessors, written as in Project's Predecessoras column: ids
     /// separated by ";" (or ","), each with an optional link type (TI, II, TT, IT, or the English
     /// FS, SS, FF, SF) and lag in working days ("2", "3II", "4TI+2 dias", "5TT-1d").
@@ -651,6 +663,26 @@ mod tests {
         let shown = d.predecessors_text(c);
         d.set_predecessors(c, &shown).unwrap();
         assert_eq!(d.predecessors_text(c), shown);
+    }
+
+    #[test]
+    fn finish_sets_the_duration_in_working_days() {
+        let mut d = Doc::blank();
+        let i = d.add_task("A", 1.0).unwrap();
+        let start = d.dt(d.schedule[i].start).date();
+        // Three working days later, whatever the weekday: count them on the calendar.
+        let mut end = start;
+        let mut working = 1;
+        while working < 3 {
+            end += Duration::days(1);
+            if d.is_working_day(end) {
+                working += 1;
+            }
+        }
+        d.set_finish(i, end).unwrap();
+        assert_eq!(d.days(i), 3.0);
+        assert_eq!(d.dt(d.schedule[i].finish).date(), end);
+        assert!(d.set_finish(i, start - Duration::days(1)).is_err());
     }
 
     #[test]
