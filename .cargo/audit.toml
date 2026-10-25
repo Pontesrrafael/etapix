@@ -1,0 +1,10 @@
+# Exceções do `cargo audit` (workflow Dependências), cada uma com motivo e data de revisão.
+[advisories]
+ignore = [
+    # quick-xml 0.30 (RUSTSEC-2026-0194 e -0195: tempo quadrático e memória com XML hostil).
+    # Vem só de zbus_xml 4.0.0 (accesskit/rfd no Linux), que lê a introspecção D-Bus de
+    # serviços locais do próprio sistema, não arquivos do usuário. Sai ao atualizar
+    # egui/eframe e rfd para versões com zbus 5. Revisar até 2027-01-31.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

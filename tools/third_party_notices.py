@@ -51,7 +51,9 @@ def license_texts(package):
     folder = pathlib.Path(package["manifest_path"]).parent
     files = [f for f in folder.iterdir() if is_license_file(f)]
     files += [f for d in folder.iterdir() if d.is_dir() and d.name not in ("src", "tests", "benches", "examples", "target") for f in d.iterdir() if is_license_file(f)]
-    return [(str(f.relative_to(folder)).replace("\\", "/"), f.read_text(encoding="utf-8", errors="replace").strip()) for f in sorted(files)]
+    # Sorted by the relative path as text: Windows and Linux order Path objects differently.
+    named = sorted((str(f.relative_to(folder)).replace("\\", "/"), f) for f in files)
+    return [(name, f.read_text(encoding="utf-8", errors="replace").strip()) for name, f in named]
 
 
 def standard_license(expression):
@@ -76,7 +78,7 @@ def notices():
         "FONTES",
         "=" * 78,
     ]
-    for ofl in sorted(FONTS.glob("OFL-*.txt")):
+    for ofl in sorted(FONTS.glob("OFL-*.txt"), key=lambda f: f.name):
         out += ["", f"--- {ofl.stem.removeprefix('OFL-')} (SIL Open Font License 1.1) ---", "",
                 ofl.read_text(encoding="utf-8", errors="replace").strip()]
     out += ["", "=" * 78, "BIBLIOTECAS", "=" * 78]
@@ -107,7 +109,11 @@ def main():
     if "--check" in sys.argv:
         current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
         if current != text:
-            sys.exit("THIRD-PARTY-NOTICES.txt está desatualizado: rode python -I tools/third_party_notices.py")
+            old, new = current.splitlines(), text.splitlines()
+            line = next((k for k, (a, b) in enumerate(zip(old, new)) if a != b), min(len(old), len(new)))
+            shown = lambda lines: lines[line] if line < len(lines) else "(fim do arquivo)"
+            sys.exit(f"THIRD-PARTY-NOTICES.txt está desatualizado (linha {line + 1}: {shown(old)!r} -> {shown(new)!r}): "
+                     "rode python -I tools/third_party_notices.py")
         return
     OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"{OUT.name}: {text.count(chr(10) + '--- ') } itens")
