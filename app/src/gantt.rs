@@ -215,14 +215,15 @@ pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32, opts: Options)
 }
 
 /// Finish-to-start arrows (the other link types are drawn the same way from their anchors).
-pub fn links(p: &Painter, s: &Scale, doc: &Doc, mid_of: impl Fn(usize) -> f32, row: f32) {
+/// `mid_of` gives a task's row centre, or `None` for a task not on display.
+pub fn links(p: &Painter, s: &Scale, doc: &Doc, mid_of: impl Fn(usize) -> Option<f32>, row: f32) {
     let stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x3D, 0x5A, 0x6C));
     for (i, t) in doc.project.tasks.iter().enumerate() {
         let xs = s.x(doc.dt(doc.schedule[i].start));
-        let ys = mid_of(i);
+        let Some(ys) = mid_of(i) else { continue };
         for link in &t.preds {
             let pf = s.x(doc.dt(doc.schedule[link.pred].finish));
-            let yp = mid_of(link.pred);
+            let Some(yp) = mid_of(link.pred) else { continue };
             let down = ys > yp;
             let edge = if down { ys - 6.0 } else { ys + 6.0 };
             if xs >= pf + 4.0 {

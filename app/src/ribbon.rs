@@ -6,6 +6,7 @@ use eframe::egui;
 
 use super::{big_button, column, group, small_button, small_button_response, soon, soon_big, Act, App, Report, Tab, View};
 use crate::icons::Icon;
+use crate::rows::{Filter, Sort};
 
 impl App {
     pub(super) fn ribbon(&mut self, ui: &mut egui::Ui) -> Vec<Act> {
@@ -278,13 +279,35 @@ impl App {
         });
         group(ui, "Dados", |ui| {
             column(ui, |ui| {
-                soon(ui, Icon::Sort, "Classificar");
-                soon(ui, Icon::Outline, "Estrutura de Tópicos");
+                self.menu_button(ui, Icon::Sort, "Classificar ▾", "classificar", |app, ui| {
+                    for sort in Sort::ALL {
+                        if ui.selectable_label(app.display.sort == sort, sort.label()).clicked() {
+                            app.display.sort = sort;
+                        }
+                    }
+                });
+                self.menu_button(ui, Icon::Outline, "Estrutura de Tópicos ▾", "estrutura", |app, ui| {
+                    if ui.button("Todas as Subtarefas").clicked() {
+                        app.display.show_level(&app.doc, None);
+                    }
+                    for level in 1..=9 {
+                        if ui.button(format!("Nível {level}")).clicked() {
+                            app.display.show_level(&app.doc, Some(level));
+                        }
+                    }
+                });
                 soon(ui, Icon::Tables, "Tabelas");
             });
             column(ui, |ui| {
                 soon(ui, Icon::Highlight, "[Sem Realce]");
-                soon(ui, Icon::Filter, "[Sem Filtro]");
+                let label = format!("{} ▾", self.display.filter.label());
+                self.menu_button(ui, Icon::Filter, &label, "filtro", |app, ui| {
+                    for filter in Filter::ALL {
+                        if ui.selectable_label(app.display.filter == filter, filter.label()).clicked() {
+                            app.display.filter = filter;
+                        }
+                    }
+                });
                 soon(ui, Icon::Group, "[Sem Grupo]");
             });
         });
@@ -465,4 +488,19 @@ fn help_tab(ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             acts.push(Act::About);
         }
     });
+}
+
+impl App {
+    /// A small ribbon button that opens a menu below it (`label` ends in " ▾").
+    fn menu_button(&mut self, ui: &mut egui::Ui, icon: Icon, label: &str, id: &str, items: impl FnOnce(&mut App, &mut egui::Ui)) {
+        let button = small_button_response(ui, icon, label, true);
+        let id = ui.make_persistent_id(id);
+        if button.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(id));
+        }
+        egui::popup_below_widget(ui, id, &button, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+            ui.set_min_width(190.0);
+            items(self, ui);
+        });
+    }
 }

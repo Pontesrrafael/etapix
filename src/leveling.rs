@@ -285,7 +285,8 @@ pub fn level(
         extent[i].extend(segments.iter().copied());
         left_units[i] -= 1;
         if left_units[i] == 0 {
-            let segments: Vec<(At, At)> = if assignments.is_empty() || (unmoved && units_of[i] == 1) {
+            // A task whose assignments place no work (a milestone, say) keeps its own dates.
+            let segments: Vec<(At, At)> = if assignments.is_empty() || extent[i].is_empty() || (unmoved && units_of[i] == 1) {
                 vec![(early_i.start, early_i.finish)]
             } else if units_of[i] == 1 && base == 0 {
                 extent[i].iter().map(|&(s, f)| (tl.start_at(s), tl.finish_at(f))).collect()

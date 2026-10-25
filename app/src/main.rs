@@ -17,6 +17,7 @@ mod mpp;
 #[cfg(test)]
 mod monkey_tests;
 mod ribbon;
+mod rows;
 mod snapshot;
 
 use std::collections::BTreeSet;
@@ -401,6 +402,9 @@ struct App {
     help: help::Help,
     /// The first-visit suggestion (off in scripted tests, which click at fixed places).
     suggest: bool,
+    /// Filter, sort and collapsed summaries; `shown` is the tasks they leave, top to bottom.
+    display: rows::Display,
+    shown: Vec<usize>,
 }
 
 impl App {
@@ -454,6 +458,8 @@ impl App {
             quick: Vec::new(),
             help: help::Help::default(),
             suggest: true,
+            display: rows::Display::default(),
+            shown: Vec::new(),
         }
     }
 
@@ -545,6 +551,24 @@ impl App {
             rows.push(self.cursor.0);
         }
         rows
+    }
+
+    /// The task on display row `row`; rows past the shown tasks are the empty rows to type
+    /// into, numbered after the last task.
+    fn task_at(&self, row: usize) -> usize {
+        self.shown.get(row).copied().unwrap_or(self.n() + row.saturating_sub(self.shown.len()))
+    }
+
+    /// The display row of task `i`, if it is shown.
+    fn row_of(&self, i: usize) -> Option<usize> {
+        if i >= self.n() {
+            return Some(self.shown.len() + i - self.n());
+        }
+        self.shown.iter().position(|&k| k == i)
+    }
+
+    fn refresh_shown(&mut self) {
+        self.shown = self.display.rows(&self.doc, chrono::Local::now().date_naive());
     }
 
     fn select_only(&mut self, row: usize) {
@@ -1425,8 +1449,9 @@ impl App {
     }
 
     fn move_cursor(&mut self, drow: i64, dcol: i64) {
-        let max_row = self.n() + 50;
-        let row = (self.cursor.0 as i64 + drow).clamp(0, max_row as i64) as usize;
+        let max_row = self.shown.len() + 50;
+        let at = self.row_of(self.cursor.0).unwrap_or(0);
+        let row = self.task_at((at as i64 + drow).clamp(0, max_row as i64) as usize);
         let idx = COLUMNS.iter().position(|c| c.0 == self.cursor.1).unwrap_or(3) as i64;
         let idx = (idx + dcol).clamp(1, COLUMNS.len() as i64 - 2) as usize;
         self.cursor = (row, COLUMNS[idx].0);
@@ -1488,8 +1513,9 @@ impl App {
                 self.selected.insert(row);
             }
         } else if mods.shift {
-            let (a, b) = (self.cursor.0.min(row), self.cursor.0.max(row));
-            self.selected = (a..=b).collect();
+            // The range runs over the rows on display (a filter or sort may reorder tasks).
+            let (from, to) = (self.row_of(self.cursor.0).unwrap_or(0), self.row_of(row).unwrap_or(0));
+            self.selected = (from.min(to)..=from.max(to)).map(|r| self.task_at(r)).collect();
         } else {
             self.select_only(row);
         }
@@ -1540,7 +1566,7 @@ impl App {
         }
         {
             let (cx, cw) = self.col_x(Col::Name);
-            let y = body.top() + n as f32 * self.row_h - self.scroll_y;
+            let y = body.top() + self.shown.len() as f32 * self.row_h - self.scroll_y;
             let r = Rect::from_min_size(Pos2::new(left + cx, y), Vec2::new(cw, self.row_h));
             if body.contains_rect(r) {
                 self.target(ui, "grade.linha_vazia", r);
@@ -1551,8 +1577,10 @@ impl App {
         let visible = (body.height() / self.row_h).ceil() as usize + 1;
         let first = (self.scroll_y / self.row_h).floor() as usize;
         let pb = ui.painter_at(body);
-        for row in first..first + visible {
-            let y = body.top() + row as f32 * self.row_h - self.scroll_y;
+        let mut toggles = Vec::new();
+        for shown_row in first..first + visible {
+            let row = self.task_at(shown_row);
+            let y = body.top() + shown_row as f32 * self.row_h - self.scroll_y;
             let line = Rect::from_min_size(Pos2::new(left, y), Vec2::new(total_w, self.row_h));
             if self.selected.contains(&row) {
                 pb.rect_filled(line, 0.0, SELECTED);
@@ -1592,8 +1620,15 @@ impl App {
                         let indent = (self.doc.outline_level(row) - 1) as f32 * 14.0;
                         let mut tx = r.left() + 4.0 + indent;
                         if t.summary {
+                            // ◢ when its subtasks show, ▷ when collapsed; a click toggles it.
                             let c = Pos2::new(tx + 4.0, r.center().y);
-                            pb.add(egui::Shape::convex_polygon(vec![c + Vec2::new(3.0, -3.0), c + Vec2::new(3.0, 3.0), c + Vec2::new(-3.0, 3.0)], TEXT, Stroke::NONE));
+                            let shape = if self.display.collapsed.contains(&t.uid) {
+                                vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(3.0, 0.0), c + Vec2::new(-2.0, 4.0)]
+                            } else {
+                                vec![c + Vec2::new(3.0, -3.0), c + Vec2::new(3.0, 3.0), c + Vec2::new(-3.0, 3.0)]
+                            };
+                            pb.add(egui::Shape::convex_polygon(shape, TEXT, Stroke::NONE));
+                            toggles.push((Rect::from_center_size(c, Vec2::splat(12.0)).intersect(body), t.uid));
                             tx += 12.0;
                         }
                         let clip = pb.with_clip_rect(r.intersect(body));
@@ -1617,17 +1652,21 @@ impl App {
         }
         // The active cell: green frame, as in Project.
         let (cx, cw) = self.col_x(self.cursor.1);
-        let cy = body.top() + self.cursor.0 as f32 * self.row_h - self.scroll_y;
+        let cursor_row = self.row_of(self.cursor.0);
+        let cy = body.top() + cursor_row.unwrap_or(0) as f32 * self.row_h - self.scroll_y;
         let cell = Rect::from_min_size(Pos2::new(left + cx, cy), Vec2::new(cw, self.row_h));
-        if self.editing.is_none() {
+        if self.editing.is_none() && cursor_row.is_some() {
             pb.rect_stroke(cell.shrink(0.5), 0.0, Stroke::new(2.0_f32, GREEN));
         }
 
         // Clicks.
         let resp = ui.interact(body, ui.id().with("grid"), Sense::click());
         if let Some(pos) = resp.interact_pointer_pos() {
-            if resp.clicked() || resp.double_clicked() {
-                let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize;
+            // A summary's triangle expands or collapses it.
+            if let Some(&(_, uid)) = toggles.iter().find(|(r, _)| resp.clicked() && r.contains(pos)) {
+                self.display.toggle(uid);
+            } else if resp.clicked() || resp.double_clicked() {
+                let row = self.task_at(((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize);
                 let mut col = Col::Name;
                 let mut x = left;
                 for (c, _, w) in self.columns() {
@@ -1700,7 +1739,7 @@ impl App {
         // The cell being edited.
         if let Some((erow, ecol)) = self.editing.as_ref().map(|e| (e.row, e.col)) {
             let (ex, ew) = self.col_x(ecol);
-            let ey = body.top() + erow as f32 * self.row_h - self.scroll_y;
+            let ey = body.top() + self.row_of(erow).unwrap_or(0) as f32 * self.row_h - self.scroll_y;
             let e = self.editing.as_mut().unwrap();
             let r = Rect::from_min_size(Pos2::new(left + ex, ey), Vec2::new(ew, self.row_h));
             ui.painter().rect_filled(r, 0.0, Color32::WHITE);
@@ -1751,21 +1790,25 @@ impl App {
         let p = ui.painter_at(body);
         gantt::background(&p, body, &scale, &self.doc);
         let n = self.n();
-        for row in self.selected.iter().copied() {
+        for row in self.selected.iter().filter_map(|&i| self.row_of(i)) {
             let y = body.top() + row as f32 * self.row_h - self.scroll_y;
             p.rect_filled(Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), self.row_h)), 0.0, SELECTED.gamma_multiply(0.6));
         }
-        let mid_of = |i: usize| body.top() + i as f32 * self.row_h - self.scroll_y + self.row_h / 2.0;
-        gantt::links(&p, &scale, &self.doc, mid_of, self.row_h);
-        for i in 0..n {
-            let mid = mid_of(i);
-            if mid > body.top() - self.row_h && mid < body.bottom() + self.row_h {
-                gantt::bar(&p, &scale, &self.doc, i, mid, self.gantt_opts);
+        // Tasks a filter or a collapsed summary hides have no row, and their links are not drawn.
+        let mut mid = vec![None; n];
+        for (row, &i) in self.shown.iter().enumerate() {
+            mid[i] = Some(body.top() + row as f32 * self.row_h - self.scroll_y + self.row_h / 2.0);
+        }
+        gantt::links(&p, &scale, &self.doc, |i| mid[i], self.row_h);
+        for &i in &self.shown {
+            let m = mid[i].unwrap_or(f32::MIN);
+            if m > body.top() - self.row_h && m < body.bottom() + self.row_h {
+                gantt::bar(&p, &scale, &self.doc, i, m, self.gantt_opts);
             }
         }
         let resp = ui.interact(body, ui.id().with("chart"), Sense::click());
         if let Some(pos) = resp.hover_pos() {
-            let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor() as usize;
+            let row = self.task_at(((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize);
             if row < n {
                 let s = &self.doc.schedule[row];
                 let (x0, x1) = (scale.x(self.doc.dt(s.start)), scale.x(self.doc.dt(s.finish)));
@@ -1777,7 +1820,7 @@ impl App {
         }
         if resp.clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
-                let row = ((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize;
+                let row = self.task_at(((pos.y - body.top() + self.scroll_y) / self.row_h).floor().max(0.0) as usize);
                 let mods = ui.input(|i| i.modifiers);
                 let col = self.cursor.1;
                 self.row_click(row, col, mods);
@@ -1800,8 +1843,8 @@ impl App {
         p.add(egui::epaint::TextShape::new(pos, galley, MINT).with_angle(-std::f32::consts::FRAC_PI_2));
         let area = Rect::from_min_max(Pos2::new(label.right(), full.top()), full.max);
 
-        let n = self.n();
-        let content_h = (n + 30) as f32 * self.row_h;
+        self.refresh_shown();
+        let content_h = (self.shown.len() + 30) as f32 * self.row_h;
         let (grid, chart) = if self.view == View::Gantt {
             let split = self.split.clamp(120.0, (area.width() - 120.0).max(120.0));
             let grid = Rect::from_min_max(area.min, Pos2::new(area.left() + split, area.bottom()));
