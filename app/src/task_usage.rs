@@ -1,6 +1,6 @@
 //! Read-only task/assignment work by day. Materials and costs are not work hours.
 
-use chrono::{Duration, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use pjsched::model::ResourceKind;
@@ -68,17 +68,24 @@ fn daily_work(doc: &Doc, first: NaiveDate, days: usize) -> Work {
 
 /// Two weeks per page, with a fixed header and independently scrollable rows/columns.
 pub fn show(ui: &mut egui::Ui, doc: &Doc, first: &mut Option<NaiveDate>) {
+    egui::Frame::none().inner_margin(egui::Margin::symmetric(16.0, 10.0)).show(ui, |ui| table(ui, doc, first));
+}
+
+fn table(ui: &mut egui::Ui, doc: &Doc, first: &mut Option<NaiveDate>) {
     const DAYS: usize = 14;
+    const WEEKDAYS: [&str; 7] = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
     let start = doc.schedule.iter().map(|s| doc.dt(s.start).date()).min().unwrap_or(doc.project.start.date());
     let date = first.get_or_insert(start);
     ui.horizontal_wrapped(|ui| {
-        ui.strong("Uso da Tarefa");
+        ui.label(egui::RichText::new("Uso da Tarefa").strong().size(16.0));
+        ui.add_space(12.0);
         if ui.button("◀ Anterior").clicked() { *date -= Duration::days(DAYS as i64); }
         if ui.button("Início do projeto").clicked() { *date = start; }
         if ui.button("Próximo ▶").clicked() { *date += Duration::days(DAYS as i64); }
         ui.label(format!("{} a {}", date.format("%d/%m/%Y"), (*date + Duration::days(DAYS as i64 - 1)).format("%d/%m/%Y")));
     });
-    ui.label("Trabalho planejado em horas · somente leitura · materiais e custos: —");
+    ui.label(egui::RichText::new("Trabalho planejado, em horas, de cada tarefa e de cada recurso nela. Para mudar, edite a tarefa no Gráfico de Gantt.").color(egui::Color32::from_gray(110)));
+    ui.add_space(6.0);
     let work = daily_work(doc, *date, DAYS);
     let mut rows = Vec::new();
     for task in 0..doc.project.tasks.len() {
@@ -95,7 +102,15 @@ pub fn show(ui: &mut egui::Ui, doc: &Doc, first: &mut Option<NaiveDate>) {
                 header.col(|ui| { ui.strong("Total (h)"); });
                 for day in 0..DAYS {
                     let day = *date + Duration::days(day as i64);
-                    header.col(|ui| { ui.strong(day.format("%d/%m/%Y").to_string()); });
+                    let weekday = WEEKDAYS[day.weekday().num_days_from_monday() as usize];
+                    // Days off on the project calendar are greyed, as Project shades them.
+                    let color = if doc.is_working_day(day) { egui::Color32::from_gray(40) } else { egui::Color32::from_gray(150) };
+                    header.col(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new(weekday).color(color).small());
+                            ui.label(egui::RichText::new(day.format("%d/%m").to_string()).color(color).strong());
+                        });
+                    });
                 }
             })
             .body(|body| body.rows(24.0, rows.len(), |mut row| {
@@ -109,9 +124,13 @@ pub fn show(ui: &mut egui::Ui, doc: &Doc, first: &mut Option<NaiveDate>) {
                     None => (format!("{}{}", "  ".repeat(doc.outline_level(task) - 1), doc.project.tasks[task].name), &work.task[task], work.total_task[task], true),
                 };
                 row.col(|ui| { if assignment.is_none() { ui.strong(name); } else { ui.label(name); } });
-                row.col(|ui| { ui.label(if is_work { format!("{total:.1}").replace('.', ",") } else { "—".into() }); });
+                // Hours line up on the right, as in Project; a material or cost resource has none.
+                let hours = |ui: &mut egui::Ui, text: String| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(text));
+                };
+                row.col(|ui| hours(ui, if is_work { format!("{total:.1}").replace('.', ",") } else { "—".into() }));
                 for value in values {
-                    row.col(|ui| { ui.label(if is_work && *value > 0.0001 { format!("{value:.1}").replace('.', ",") } else { "—".into() }); });
+                    row.col(|ui| hours(ui, if is_work && *value > 0.0001 { format!("{value:.1}").replace('.', ",") } else { String::new() }));
                 }
             }));
     });

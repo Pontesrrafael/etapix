@@ -421,7 +421,10 @@ fn draw_gantt_header(c: &mut Canvas, s: &PdfScale, left: f32, top: f32, width: f
             if x >= left {
                 c.line(x, top, x, top + height, GRID_LINE, 0.5);
             }
-            c.text(x.max(left) + 3.0, top + 9.5, &fmt::week_label(w), 7.0, false, NAVY);
+            // A week cut at the left edge keeps its label only if the next one leaves room.
+            if x >= left || s.x_date(w + Duration::days(7)) - left > 48.0 {
+                c.text(x.max(left) + 3.0, top + 9.5, &fmt::week_label(w), 7.0, false, NAVY);
+            }
             w += Duration::days(7);
         }
         let mut d = d0;
