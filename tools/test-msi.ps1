@@ -6,12 +6,12 @@ $installer=New-Object -ComObject WindowsInstaller.Installer
 function Read-Property($path,$property) {
   $db=$installer.OpenDatabase((Resolve-Path -LiteralPath $path).Path,0)
   $view=$db.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$property'")
-  $view.Execute(); $record=$view.Fetch(); $value=$record.StringData(1); $view.Close(); return $value
+  $null=$view.Execute(); $record=$view.Fetch(); $value=$record.StringData(1); $null=$view.Close(); return $value
 }
 function Assert-NoCustomActions($path) {
   $db=$installer.OpenDatabase((Resolve-Path -LiteralPath $path).Path,0)
   $view=$db.OpenView('SELECT `Name` FROM `_Tables` WHERE `Name`=''CustomAction''')
-  $view.Execute(); if($view.Fetch()) { throw 'CustomAction não permitida no MSI' }; $view.Close()
+  $null=$view.Execute(); if($view.Fetch()) { throw 'CustomAction não permitida no MSI' }; $view.Close()
 }
 function Run-Msi([string[]]$MsiArguments) {
   $process=Start-Process -FilePath msiexec.exe -ArgumentList $MsiArguments -Wait -PassThru -WindowStyle Hidden
