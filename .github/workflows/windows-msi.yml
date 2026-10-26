@@ -32,8 +32,10 @@ jobs:
           cargo test --locked -p pjsched -p etapix
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $env:RUSTFLAGS='-C target-feature=+crt-static'
-          cargo build --locked --release -p etapix --bin etapix --bin etapix-mcp
+          cargo build --locked --release --target x86_64-pc-windows-msvc -p etapix --bin etapix --bin etapix-mcp
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force target/release | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/etapix.exe,target/x86_64-pc-windows-msvc/release/etapix-mcp.exe target/release/
       - name: Check runtime dependencies
         run: |
           $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
