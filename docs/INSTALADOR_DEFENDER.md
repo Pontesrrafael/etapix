@@ -27,3 +27,6 @@ Candidato final: 22E55300114BF5F7B1DAAA6EC9932A5DB98697AA5EEFB84D581A91B519F07DC
 
 ## Atualização autorizada do repositório
 O usuário autorizou atualizar o GitHub após ser informado da assinatura e do teste completo pendentes. A cópia da raiz foi substituída pelo candidato examinado, com hash e limitações no README. Esta distribuição excepcional sem assinatura não altera o bloqueio do build -ForPublication, que continua exigindo assinatura. Edição dos assets da release depende de autenticação GitHub disponível.
+
+## Reabertura da investigação após o teste de download
+O usuário reproduziu a detecção. Registros Defender de 26/10/2026 às 16:53:05 e 16:58:39 apontam o download da URL master; o arquivo já não estava disponível para hash. A leitura HTTP atual do master e do commit imutável confirmou SHA256 22E55300114BF5F7B1DAAA6EC9932A5DB98697AA5EEFB84D581A91B519F07DCB. O digest do asset da release também coincide. Isso confirma a distribuição do candidato e invalida a conclusão de que o scan local bastaria para liberar; não comprova o hash da amostra colocada em quarentena. README e release sinalizados como investigação aberta. Não houve restauração de quarentena, exclusão ou mudança na proteção. Pendente análise da Microsoft da amostra exata e novo ensaio isolado antes de liberar.

@@ -1,5 +1,7 @@
 # Etapix
 
+> **Distribuição Windows em investigação — 26/10/2026.** O usuário reproduziu Trojan:Win32/Ulthar.A!ml após a atualização. O GitHub está servindo o hash novo 22E55300114BF5F7B1DAAA6EC9932A5DB98697AA5EEFB84D581A91B519F07DCB. A varredura local sem ameaças não foi suficiente para validar o download. Não instale este pacote enquanto o alerta não for esclarecido e não desative o Defender. A análise da Microsoft permanece pendente. Os resultados de varredura abaixo são históricos, não uma aprovação atual de distribuição.
+
 ## Instalar o Etapix
 
 | Sistema | Instalador | Como instalar |
