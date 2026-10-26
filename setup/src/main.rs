@@ -22,21 +22,40 @@ use std::process::Command;
 
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 
-const APP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix.exe"));
-const MCP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../target/release/etapix-mcp.exe"));
+const APP: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../target/release/etapix.exe"
+));
+const MCP: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../target/release/etapix-mcp.exe"
+));
 const MCPB: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../dist/etapix.mcpb"));
 /// The licenses travel with the programs: Etapix's own and the notices of the libraries and
 /// fonts built into it (`tools/third_party_notices.py`).
 const LICENSES: [(&str, &[u8]); 3] = [
-    ("LICENSE-MIT.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-MIT"))),
-    ("LICENSE-APACHE.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-APACHE"))),
-    ("THIRD-PARTY-NOTICES.txt", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../THIRD-PARTY-NOTICES.txt"))),
+    (
+        "LICENSE-MIT.txt",
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-MIT")),
+    ),
+    (
+        "LICENSE-APACHE.txt",
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../LICENSE-APACHE")),
+    ),
+    (
+        "THIRD-PARTY-NOTICES.txt",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../THIRD-PARTY-NOTICES.txt"
+        )),
+    ),
 ];
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\etapix";
 
 fn install_dir() -> PathBuf {
-    PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("etapix")
+    PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+        .join("Programs")
+        .join("etapix")
 }
 
 fn shortcut() -> PathBuf {
@@ -68,7 +87,11 @@ fn tell(level: MessageLevel, text: &str) {
         }
         return;
     }
-    MessageDialog::new().set_title("Etapix").set_level(level).set_description(text).show();
+    MessageDialog::new()
+        .set_title("Etapix")
+        .set_level(level)
+        .set_description(text)
+        .show();
 }
 
 /// Runs a command without a console window and reports a non-zero exit.
@@ -80,38 +103,21 @@ fn run(program: &str, args: &[&str]) -> Result<(), String> {
         .creation_flags(CREATE_NO_WINDOW)
         .status()
         .map_err(|e| format!("{program}: {e}"))?;
-    if status.success() { Ok(()) } else { Err(format!("{program} terminou com {status}")) }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{program} terminou com {status}"))
+    }
 }
 
+mod windows_install;
+
 fn create_shortcut(target: &Path, link: &Path) -> Result<(), String> {
-    // WScript.Shell is part of every Windows install; paths are passed as arguments, not code.
-    let script = "param($t,$l) $s=(New-Object -ComObject WScript.Shell).CreateShortcut($l); \
-                  $s.TargetPath=$t; $s.WorkingDirectory=(Split-Path $t); $s.Save()";
-    run(
-        "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", &format!("& {{{script}}} '{}' '{}'", target.display(), link.display())],
-    )
+    windows_install::create_shortcut(target, link)
 }
 
 fn register(dir: &Path, uninstaller: &Path) -> Result<(), String> {
-    let size_kb = (APP.len() / 1024).to_string();
-    let uninstall = format!("\"{}\" /uninstall", uninstaller.display());
-    let icon = dir.join("etapix.exe").display().to_string();
-    let location = dir.display().to_string();
-    for (name, kind, value) in [
-        ("DisplayName", "REG_SZ", "Etapix"),
-        ("DisplayVersion", "REG_SZ", VERSION),
-        ("Publisher", "REG_SZ", "Equipe (uso interno)"),
-        ("InstallLocation", "REG_SZ", location.as_str()),
-        ("DisplayIcon", "REG_SZ", icon.as_str()),
-        ("UninstallString", "REG_SZ", uninstall.as_str()),
-        ("EstimatedSize", "REG_DWORD", size_kb.as_str()),
-        ("NoModify", "REG_DWORD", "1"),
-        ("NoRepair", "REG_DWORD", "1"),
-    ] {
-        run("reg", &["add", UNINSTALL_KEY, "/v", name, "/t", kind, "/d", value, "/f"])?;
-    }
-    Ok(())
+    windows_install::register(dir, uninstaller, VERSION, (APP.len() / 1024) as u32)
 }
 
 /// Writes `dir/name`. Claude and Codex keep the connector running while they are open, and
@@ -120,7 +126,10 @@ fn register(dir: &Path, uninstaller: &Path) -> Result<(), String> {
 fn write_in_use(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
-            if e.file_name().to_string_lossy().starts_with(&format!("{name}.antigo")) {
+            if e.file_name()
+                .to_string_lossy()
+                .starts_with(&format!("{name}.antigo"))
+            {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -129,7 +138,10 @@ fn write_in_use(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
     if std::fs::write(&target, bytes).is_ok() {
         return Ok(());
     }
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let aside = dir.join(format!("{name}.antigo-{stamp}"));
     std::fs::rename(&target, &aside).map_err(|e| format!("{name}: {e}"))?;
     std::fs::write(&target, bytes).map_err(|e| format!("{name}: {e}"))
@@ -140,7 +152,8 @@ fn install() -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     remove_set_aside(&dir);
     let exe = dir.join("etapix.exe");
-    std::fs::write(&exe, APP).map_err(|e| format!("{}: {e} (o Etapix está aberto?)", exe.display()))?;
+    std::fs::write(&exe, APP)
+        .map_err(|e| format!("{}: {e} (o Etapix está aberto?)", exe.display()))?;
     // Keep a copy of this installer as the uninstaller.
     let uninstaller = dir.join("desinstalar.exe");
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -160,7 +173,9 @@ fn install() -> Result<PathBuf, String> {
 
 /// Deletes the copies `write_in_use` set aside in earlier installs; one still running stays.
 fn remove_set_aside(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in entries.flatten() {
         if e.file_name().to_string_lossy().contains(".antigo-") {
             let _ = std::fs::remove_file(e.path());
@@ -169,35 +184,42 @@ fn remove_set_aside(dir: &Path) {
 }
 
 fn uninstall() -> Result<(), String> {
-    let _ = std::fs::remove_file(shortcut());
     let dir = install_dir();
-    // Take the connector out of Claude Code and Codex before its program goes away.
-    let _ = run(&dir.join("etapix-mcp.exe").display().to_string(), &["remover"]);
-    let _ = run("reg", &["delete", UNINSTALL_KEY, "/f"]);
-    let _ = std::fs::remove_file(dir.join("etapix.exe"));
-    // This program is running from the folder: a detached shell retries deleting the folder
-    // (up to ~20 s) until this process has exited and released the file.
-    let d = dir.display();
-    let cleanup = format!(
-        "for /l %i in (1,1,10) do (ping -n 3 127.0.0.1 > nul & rmdir /s /q \"{d}\" & if not exist \"{d}\" exit)"
-    );
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-    // raw_arg: cmd does not understand the \" escaping that `args` would apply to the quotes.
-    // Break away from any job object so closing this program does not end the cleanup.
-    let spawn = |flags| Command::new("cmd").raw_arg(format!("/c {cleanup}")).creation_flags(flags).spawn();
-    spawn(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB)
-        .or_else(|_| spawn(CREATE_NO_WINDOW))
-        .map_err(|e| e.to_string())?;
+    // Never recursively delete the installation directory: it may contain user files.
+    let mcp = dir.join("etapix-mcp.exe");
+    if mcp.exists() {
+        run(&mcp.display().to_string(), &["remover"])?;
+    }
+    let remove = |path: &Path| -> Result<(), String> {
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    };
+    for name in [
+        "etapix.exe",
+        "etapix-mcp.exe",
+        "etapix.mcpb",
+        "LICENSE-MIT.txt",
+        "LICENSE-APACHE.txt",
+        "THIRD-PARTY-NOTICES.txt",
+    ] {
+        remove(&dir.join(name))?;
+    }
+    remove(&shortcut())?;
+    windows_install::unregister()?;
+    // Windows locks the running uninstaller. Keep it rather than spawning a shell
+    // to delete itself; the completion message documents this residual file.
     Ok(())
 }
 
 fn main() {
     if std::env::args().any(|a| a.eq_ignore_ascii_case("/uninstall")) {
-        if ask("Remover o Etapix deste computador?\n\nSeus arquivos de projeto não são apagados.") {
+        if ask("Remover o Etapix deste computador?\n\nSeus arquivos de projeto não são apagados.")
+        {
             match uninstall() {
-                Ok(()) => tell(MessageLevel::Info, "Etapix foi removido."),
+                Ok(()) => tell(MessageLevel::Info, "Etapix foi removido. O arquivo desinstalar.exe permanece na pasta de instalação e pode ser excluído após fechar esta janela. Arquivos desconhecidos foram preservados."),
                 Err(e) => tell(MessageLevel::Error, &format!("Não foi possível remover tudo: {e}")),
             }
         }
@@ -222,8 +244,14 @@ Inclui o conector do Etapix para o Claude e o Codex.",
             if !silent() {
                 args.push(mcpb.display().to_string());
             }
-            if let Err(e) = run(&mcp.display().to_string(), &args.iter().map(String::as_str).collect::<Vec<_>>()) {
-                tell(MessageLevel::Warning, &format!("O Etapix foi instalado, mas o conector do Claude/Codex não: {e}"));
+            if let Err(e) = run(
+                &mcp.display().to_string(),
+                &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            ) {
+                tell(
+                    MessageLevel::Warning,
+                    &format!("O Etapix foi instalado, mas o conector do Claude/Codex não: {e}"),
+                );
             }
             if !silent() && ask("Etapix instalado. Ele está no Menu Iniciar.\n\nAbrir agora?") {
                 let _ = Command::new(exe).spawn();

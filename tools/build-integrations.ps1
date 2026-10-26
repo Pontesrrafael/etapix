@@ -3,6 +3,7 @@
 #   etapix-skill.zip                  the skill, for claude.ai's "upload skill"
 #   Etapix-Claude-Codex-<version>.zip everything above plus instalar.cmd (one double-click)
 # Needs the same PATH as build-installer.ps1 (Rust and the WinLibs binutils).
+param([string]$CertificateThumbprint, [switch]$ForPublication)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
@@ -25,6 +26,7 @@ try {
   $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\tools\mingw64\bin;$env:PATH"
   cargo build -p etapix --release --bin etapix-mcp
   if ($LASTEXITCODE) { throw 'falha ao compilar o etapix-mcp' }
+  & (Join-Path $PSScriptRoot 'sign-artifacts.ps1') -Paths @('target/release/etapix-mcp.exe') -CertificateThumbprint $CertificateThumbprint -RequireSignature:$ForPublication
   $version = (Get-Content integrations\mcpb\manifest.json -Raw | ConvertFrom-Json).version
   $work = Join-Path $root 'target\integrations'
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

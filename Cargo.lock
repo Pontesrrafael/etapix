@@ -1118,6 +1118,7 @@ name = "etapix-setup"
 version = "0.1.0"
 dependencies = [
  "rfd",
+ "windows 0.58.0",
 ]
 
 [[package]]

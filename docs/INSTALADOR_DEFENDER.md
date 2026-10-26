@@ -1,0 +1,29 @@
+# Revisão do instalador e alerta Defender — 2026-10-26
+
+## Correções implementadas
+- Atalhos via IShellLinkW/IPersistFile; caminhos são dados UTF-16, sem interpolação PowerShell.
+- Registro de instalação HKCU via API Windows, sem reg.exe.
+- Desinstalação sem CMD, ping ou processo destacado; remove somente os arquivos explicitamente conhecidos. Arquivos desconhecidos são preservados. O próprio desinstalar.exe permanece após o encerramento e a mensagem informa essa limitação.
+- Falhas ao remover o conector ou arquivos passam a ser reportadas.
+- Build com -ForPublication exige assinatura Authenticode válida e carimbo de tempo em aplicativo, conector e instalador. Assinatura do conector ocorre antes de incluí-lo nos arquivos de integração; assinatura do instalador ocorre após incorporar os binários. Build sem esse parâmetro não substitui Etapix-Instalador.exe da raiz.
+- Ferramenta tools/sign-artifacts.ps1 aceita thumbprint de certificado no repositório CurrentUser/My. Não cria certificado autoassinado nem manipula confiança da máquina.
+
+## Validação
+Dois testes aprovados: caminho UTF-16 com apóstrofo/Unicode e criação/leitura real de atalho COM em pasta temporária. Scripts PowerShell com sintaxe validada; gate de publicação recusa executável sem assinatura. Compilação e Clippy registrados na sessão.
+
+Primeira tentativa de varredura Defender via MpCmdRun terminou com erro 0x80508023 e exit 2. Não é resultado limpo nem comprovação de detecção do candidato. Proteção em tempo real permaneceu ativa. Assinaturas observadas: 1.461.215.0, motor 1.1.26090.9. Nenhuma exclusão ou desativação aplicada.
+
+## Pendências
+- Assinar usando identidade real do editor e certificado confiável, ainda não fornecido.
+- Concluir varredura do candidato e dos executáveis internos; submeter a amostra exata à Microsoft e registrar resposta.
+- Validar instalação, atualização e desinstalação em Windows isolado; não executado contra configuração real do usuário.
+- Não publicado, instalado ou enviado a serviços externos nesta revisão. O arquivo público antigo continua inalterado.
+- Alterações não garantem ausência de alertas futuros nem estabelecem que a detecção original seja falso positivo.
+
+## Pontos de melhoria
+Migrar o instalador próprio para MSI padrão, eliminando a necessidade de reter o desinstalador em execução. Publicar versão imutável com hashes, assinatura e evidências da validação. Revisar dependências e ambiente de build antes de liberar.
+## Resultado final da varredura
+Candidato final: 22E55300114BF5F7B1DAAA6EC9932A5DB98697AA5EEFB84D581A91B519F07DCB. MpCmdRun, com caminho Windows nativo, retornou exit 0 e found no threats para o instalador final, aplicativo e conector. O erro inicial não se repetiu. Esse resultado é pontual e não garante ausência de alertas em outras máquinas ou assinaturas futuras. Build release e Clippy --all-targets -D warnings aprovados.
+
+## Atualização autorizada do repositório
+O usuário autorizou atualizar o GitHub após ser informado da assinatura e do teste completo pendentes. A cópia da raiz foi substituída pelo candidato examinado, com hash e limitações no README. Esta distribuição excepcional sem assinatura não altera o bloqueio do build -ForPublication, que continua exigindo assinatura. Edição dos assets da release depende de autenticação GitHub disponível.

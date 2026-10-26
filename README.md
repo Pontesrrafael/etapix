@@ -11,6 +11,13 @@ Os dois instalam o Etapix só para o seu usuário, sem administrador, e registra
 
 Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
+
+### Revisão do instalador Windows — 26/10/2026
+
+O instalador disponível na raiz inclui correções de criação de atalhos e desinstalação. Microsoft Defender examinou este pacote e os executáveis internos sem encontrar ameaças na validação de 26/10/2026. O pacote ainda não possui assinatura digital; esse resultado pontual não garante ausência de alertas em outros computadores ou atualizações futuras. Não desative o antivírus para instalar.
+
+Confira [o SHA-256](Etapix-Instalador.exe.sha256) e [as evidências e pendências](docs/INSTALADOR_DEFENDER.md). O teste completo de instalação/atualização/desinstalação em Windows isolado permanece pendente. A release anterior pode conter outro instalador; para esta revisão use o link Windows da tabela acima.
+
 ## Privacidade
 
 O Etapix não envia nada pela internet. Ao usar o conector, o conteúdo do cronograma (nomes de tarefas, recursos — que podem ser nomes de pessoas —, datas, custos) é enviado pelo assistente (Claude/Codex) aos servidores do fornecedor, possivelmente fora do Brasil; use só se a política da sua empresa permitir e evite dados pessoais desnecessários.
