@@ -31,8 +31,22 @@ jobs:
         run: |
           cargo test --locked -p pjsched -p etapix
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:RUSTFLAGS='-C target-feature=+crt-static'
           cargo build --locked --release -p etapix --bin etapix --bin etapix-mcp
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Check runtime dependencies
+        run: |
+          $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs=& $vswhere -latest -products '*' -property installationPath
+          $toolset=Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $dumpbin=Join-Path $toolset.FullName 'bin/Hostx64/x64/dumpbin.exe'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach($file in @('target/release/etapix.exe','target/release/etapix-mcp.exe')) {
+            $imports=& $dumpbin /DEPENDENTS $file
+            if ($LASTEXITCODE) { throw 'DLL dependency inspection failed' }
+            $imports | Out-File "dist/$([IO.Path]::GetFileName($file))-imports.txt"
+            if (($imports -join "`n") -match '(?i)VCRUNTIME[0-9_]*\.dll|MSVCP[0-9_]*\.dll|libgcc_s.*\.dll|libstdc[+][+].*\.dll') { throw 'Runtime redistributable dependency remains' }
+          }
       - name: Build declarative packages
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
