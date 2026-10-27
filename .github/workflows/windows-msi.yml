@@ -1,0 +1,89 @@
+name: Windows MSI validation
+on:
+  pull_request:
+    paths:
+      - 'packaging/windows/**'
+      - 'tools/*msi.ps1'
+      - '.github/workflows/windows-msi.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      RUSTUP_TOOLCHAIN: stable-x86_64-pc-windows-msvc
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare clean toolchain
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          dotnet tool install wix --version 4.0.6 --tool-path target/wix-tools
+      - name: Tests and clean build
+        run: |
+          cargo test --locked -p pjsched -p etapix
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:RUSTFLAGS='-C target-feature=+crt-static'
+          cargo build --locked --release --target x86_64-pc-windows-msvc -p etapix --bin etapix --bin etapix-mcp
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force target/release | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/etapix.exe,target/x86_64-pc-windows-msvc/release/etapix-mcp.exe target/release/
+      - name: Check runtime dependencies
+        run: |
+          $vswhere="${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs=& $vswhere -latest -products '*' -property installationPath
+          $toolset=Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $dumpbin=Join-Path $toolset.FullName 'bin/Hostx64/x64/dumpbin.exe'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach($file in @('target/release/etapix.exe','target/release/etapix-mcp.exe')) {
+            $imports=& $dumpbin /DEPENDENTS $file
+            if ($LASTEXITCODE) { throw 'DLL dependency inspection failed' }
+            $imports | Out-File "dist/$([IO.Path]::GetFileName($file))-imports.txt"
+            if (($imports -join "`n") -match '(?i)VCRUNTIME[0-9_]*\.dll|MSVCP[0-9_]*\.dll|libgcc_s.*\.dll|libstdc[+][+].*\.dll') { throw 'Runtime redistributable dependency remains' }
+          }
+      - name: Build declarative packages
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          ./tools/build-msi.ps1 -Version 0.1.1
+          ./tools/build-msi.ps1 -Version 0.1.2
+      - name: Scan MSI and payloads with Defender
+        run: |
+          $status=Get-MpComputerStatus
+          $status | ConvertTo-Json -Depth 6 | Set-Content dist/defender-status.json
+          if (-not $status.AntivirusEnabled -or -not $status.RealTimeProtectionEnabled) {
+            @{ verdict='NOT_TESTED'; reason='Hosted runner has no active Defender; endpoint validation required before publication' } | ConvertTo-Json | Set-Content dist/defender-verdict.json
+            Write-Warning 'ANTIVIRUS NOT TESTED: validate on a protected endpoint before publication'
+            exit 0
+          }
+          $platform=Get-ChildItem 'C:/ProgramData/Microsoft/Windows Defender/Platform' -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
+          foreach($file in @('dist/Etapix-0.1.1-x64.msi','dist/Etapix-0.1.2-x64.msi','target/msi-payload/etapix.exe','target/msi-payload/etapix-mcp.exe')) {
+            & $scanner -Scan -ScanType 3 -File (Resolve-Path -LiteralPath $file).Path
+            if ($LASTEXITCODE) { throw "Defender failed or detected threat: $file" }
+          }
+          @{ verdict='NO_THREATS_FOUND'; scope='manual scanner on hosted runner only' } | ConvertTo-Json | Set-Content dist/defender-verdict.json
+      - name: Validate lifecycle in disposable Windows
+        run: ./tools/test-msi.ps1 -Package dist/Etapix-0.1.1-x64.msi -UpgradePackage dist/Etapix-0.1.2-x64.msi
+      - name: Record hashes
+        if: always()
+        run: |
+          Get-ChildItem dist/*.msi,target/msi-payload/*.exe -ErrorAction SilentlyContinue | Get-FileHash | Format-List | Out-File dist/validation-hashes.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Etapix-MSI-validation-${{ github.sha }}
+          path: |
+            dist/*.msi
+            dist/*.sha256
+            dist/*.json
+            dist/*.txt
+            dist/lifecycle-logs/**
+          retention-days: 14
