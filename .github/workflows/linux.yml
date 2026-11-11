@@ -17,7 +17,7 @@ jobs:
       # rust-toolchain.toml pins the Windows GNU toolchain for the Windows build machine.
       RUSTUP_TOOLCHAIN: stable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust
         run: rustup toolchain install stable --profile minimal --component clippy
