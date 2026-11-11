@@ -78,9 +78,7 @@ impl App {
             });
         });
         if let Some(i) = go {
-            self.select_only(i);
-            self.cursor.0 = i;
-            self.scroll_y = (i as f32 * self.row_h - 3.0 * self.row_h).max(0.0);
+            self.reveal_task(i);
         }
         if open {
             self.find = Some(text);

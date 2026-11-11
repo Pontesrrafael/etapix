@@ -116,6 +116,18 @@ pub fn level(
     cals: &Calendars,
     options: LevelingOptions,
 ) -> Result<Vec<TaskSchedule>, ScheduleError> {
+    level_only(project, cals, options, None)
+}
+
+/// Levels only the tasks marked in `movable` (Project's "Nivelar Seleção" and "Nivelar
+/// Recurso"); the others stay where they are, a saved leveling delay included, and still hold
+/// their resources. `None` levels every task.
+pub fn level_only(
+    project: &Project,
+    cals: &Calendars,
+    options: LevelingOptions,
+    movable: Option<&[bool]>,
+) -> Result<Vec<TaskSchedule>, ScheduleError> {
     let n = project.tasks.len();
     let unleveled = cpm::schedule(project, cals, None)?;
     let net = Network::build(project)?;
@@ -145,7 +157,8 @@ pub fn level(
         let (i, asgs) = &units[u];
         let t = &project.tasks[*i];
         let s = &unleveled[*i];
-        let fixed = t.priority >= PRIORITY_DO_NOT_LEVEL;
+        // Tasks that stay put book their resources first, so the others go around them.
+        let fixed = t.priority >= PRIORITY_DO_NOT_LEVEL || movable.is_some_and(|m| !m[*i]);
         let resource = asgs.iter().map(|&k| project.assignments[k].resource).min().unwrap_or(0);
         let standard = (s.total_slack, s.early_start);
         match options.order {
@@ -180,7 +193,11 @@ pub fn level(
         // Search in the task's own working time: bookings made on other calendars are seen
         // through this task's timeline.
         let tl = cals.task(i);
-        let es = tl.w(early_i.start);
+        let frozen = movable.is_some_and(|m| !m[i]);
+        // A task left out of this leveling keeps the delay an earlier leveling gave it.
+        let kept = (frozen && task.leveling_delay > 0 && task.progress.actual_start.is_none())
+            .then(|| tl.snap_start(early_i.start + task.leveling_delay));
+        let es = tl.w(kept.unwrap_or(early_i.start));
         let usage: Vec<Usage> = booked
             .iter()
             .map(|b| Usage(b.0.iter().map(|&(s, f, r)| (tl.w(s), tl.w(f), r)).filter(|b| b.1 > b.0).collect()))
@@ -235,7 +252,8 @@ pub fn level(
         let unmoved = task.priority >= PRIORITY_DO_NOT_LEVEL
             || assignments.is_empty()
             || task.progress.actual_start.is_some()
-            || !in_range;
+            || !in_range
+            || frozen;
         let mut split = false;
         let segments: Vec<(Wm, Wm)> = if unmoved {
             vec![(es + base, es + base + span)]
@@ -286,7 +304,9 @@ pub fn level(
         left_units[i] -= 1;
         if left_units[i] == 0 {
             // A task whose assignments place no work (a milestone, say) keeps its own dates.
-            let segments: Vec<(At, At)> = if assignments.is_empty() || extent[i].is_empty() || (unmoved && units_of[i] == 1) {
+            let segments: Vec<(At, At)> = if let Some(start) = kept {
+                vec![(start, tl.finish_after(start, task.duration))]
+            } else if assignments.is_empty() || extent[i].is_empty() || (unmoved && units_of[i] == 1) {
                 vec![(early_i.start, early_i.finish)]
             } else if units_of[i] == 1 && base == 0 {
                 extent[i].iter().map(|&(s, f)| (tl.start_at(s), tl.finish_at(f))).collect()
