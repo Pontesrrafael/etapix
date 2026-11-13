@@ -1,0 +1,12 @@
+Etapix — pacote MSI de validação
+
+Instalação gerenciada pelo Windows Installer, somente para o usuário em LOCALAPPDATA/Programs/Etapix-MSI. O aplicativo não precisa do WiX nem do .NET para executar; essas ferramentas são usadas somente para gerar o pacote.
+
+Instalação: msiexec /i Etapix-0.1.1-x64.msi
+Remoção: Configurações > Aplicativos > Etapix, ou msiexec /x Etapix-0.1.1-x64.msi
+
+O MSI instala o aplicativo, conector, atalhos e licenças. Não executa scripts nem registra automaticamente o MCP. Para usar o conector, consulte a documentação de integrações e sua política de dados; a instalação do aplicativo não autoriza envio de cronogramas a fornecedores de IA.
+
+O EXE legado não é executado, atualizado ou removido por este MSI. Ele usa outra pasta e pode continuar aparecendo como uma instalação separada. Configurações existentes de MCP podem continuar apontando para a pasta legada. Não execute um desinstalador que o antivírus esteja bloqueando; a migração do legado deve ser feita pela TI após análise.
+
+Se o Defender detectar ameaça, mantenha o bloqueio/quarentena. Não crie exclusões e não desative a proteção. Assinatura confiável e análise Microsoft permanecem pendentes. Não há garantia de ausência de detecções futuras. Consulte docs/INSTALADOR_DEFENDER.md para resultados efetivamente observados.
