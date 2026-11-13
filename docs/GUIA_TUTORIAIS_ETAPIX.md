@@ -14,7 +14,7 @@ A seção 10 diz o que foi verificado e a seção **Pendências**, o que falta.
 
 | Campo | Preenchido |
 |---|---|
-| Aplicação | Etapix 0.1.0 |
+| Aplicação | Etapix 0.2.0 |
 | Objetivo da aplicação | Planejar e acompanhar cronogramas de projeto (tarefas, estrutura, vínculos, recursos, caminho crítico, nivelamento e linha de base) com a mesma interface e os mesmos cálculos do Microsoft Project, lendo e gravando arquivos `.mpp` e Project XML. |
 | Público principal | Equipe interna que já usa ou usaria o Microsoft Project: planejadores, coordenadores e gestores de projeto. Parte do público vem do Project e espera os mesmos nomes; parte nunca usou uma ferramenta de cronograma. |
 | Módulos prioritários | 1. Grade de tarefas e Gráfico de Gantt. 2. Aba Tarefa. 3. Arquivo (abrir e salvar `.mpp`/`.xml`). 4. Aba Recurso. 5. Aba Projeto. 6. Aba Exibir e Formato. 7. Aba Relatório. 8. Linha do Tempo. 9. Conector para Claude e Codex. |
@@ -108,7 +108,7 @@ concluído ou dispensado.
 
 ## 5. Conteúdo de cada módulo
 
-Nomes iguais aos da interface do Etapix 0.1.0. Nada aqui promete o que o Etapix não faz:
+Nomes iguais aos da interface do Etapix 0.2.0. Nada aqui promete o que o Etapix não faz:
 os comandos em cinza na faixa de opções estão listados em **Limitações**.
 
 ### Grade de tarefas e Gráfico de Gantt

@@ -2,8 +2,8 @@ Etapix — pacote MSI de validação
 
 Instalação gerenciada pelo Windows Installer, somente para o usuário em LOCALAPPDATA/Programs/Etapix-MSI. O aplicativo não precisa do WiX nem do .NET para executar; essas ferramentas são usadas somente para gerar o pacote.
 
-Instalação: msiexec /i Etapix-0.1.1-x64.msi
-Remoção: Configurações > Aplicativos > Etapix, ou msiexec /x Etapix-0.1.1-x64.msi
+Instalação: dois cliques no arquivo .msi, ou msiexec /i Etapix-<versão>-x64.msi
+Remoção: Configurações > Aplicativos > Etapix, ou msiexec /x Etapix-<versão>-x64.msi
 
 O MSI instala o aplicativo, conector, atalhos e licenças. Não executa scripts nem registra automaticamente o MCP. Para usar o conector, consulte a documentação de integrações e sua política de dados; a instalação do aplicativo não autoriza envio de cronogramas a fornecedores de IA.
 

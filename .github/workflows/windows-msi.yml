@@ -52,8 +52,15 @@ jobs:
       - name: Build declarative packages
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          ./tools/build-msi.ps1 -Version 0.1.1
-          ./tools/build-msi.ps1 -Version 0.1.2
+          # The package to publish has the version in app/Cargo.toml; the next patch version
+          # exists only to test the upgrade.
+          $version=(Select-String -Path app/Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $parts=$version.Split('.')
+          $upgrade="$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)"
+          "ETAPIX_VERSION=$version" | Add-Content $env:GITHUB_ENV
+          "ETAPIX_UPGRADE=$upgrade" | Add-Content $env:GITHUB_ENV
+          ./tools/build-msi.ps1 -Version $version
+          ./tools/build-msi.ps1 -Version $upgrade
       - name: Scan MSI and payloads with Defender
         run: |
           $status=Get-MpComputerStatus
@@ -65,13 +72,13 @@ jobs:
           }
           $platform=Get-ChildItem 'C:/ProgramData/Microsoft/Windows Defender/Platform' -Directory | Sort-Object Name -Descending | Select-Object -First 1
           $scanner=Join-Path $platform.FullName 'MpCmdRun.exe'
-          foreach($file in @('dist/Etapix-0.1.1-x64.msi','dist/Etapix-0.1.2-x64.msi','target/msi-payload/etapix.exe','target/msi-payload/etapix-mcp.exe')) {
+          foreach($file in @("dist/Etapix-$env:ETAPIX_VERSION-x64.msi","dist/Etapix-$env:ETAPIX_UPGRADE-x64.msi",'target/msi-payload/etapix.exe','target/msi-payload/etapix-mcp.exe')) {
             & $scanner -Scan -ScanType 3 -File (Resolve-Path -LiteralPath $file).Path
             if ($LASTEXITCODE) { throw "Defender failed or detected threat: $file" }
           }
           @{ verdict='NO_THREATS_FOUND'; scope='manual scanner on hosted runner only' } | ConvertTo-Json | Set-Content dist/defender-verdict.json
       - name: Validate lifecycle in disposable Windows
-        run: ./tools/test-msi.ps1 -Package dist/Etapix-0.1.1-x64.msi -UpgradePackage dist/Etapix-0.1.2-x64.msi
+        run: ./tools/test-msi.ps1 -Package "dist/Etapix-$env:ETAPIX_VERSION-x64.msi" -UpgradePackage "dist/Etapix-$env:ETAPIX_UPGRADE-x64.msi"
       - name: Record hashes
         if: always()
         run: |

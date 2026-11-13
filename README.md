@@ -1,24 +1,24 @@
 # Etapix
 
-> **Windows — MSI em avaliação.** O novo pacote 0.1.1 está disponível como pré-release. O instalador EXE antigo continua em investigação por detecção no Defender. O MSI passou nos testes funcionais e na varredura local; assinatura digital e validação completa do download permanecem pendentes. Não ignore alertas nem desative a proteção.
+> **Windows — MSI em avaliação.** O pacote 0.2.0 ainda não tem assinatura digital. O instalador EXE antigo continua em investigação por detecção no Defender. O MSI passou nos testes funcionais e na varredura local; assinatura digital e validação completa do download permanecem pendentes. Não ignore alertas nem desative a proteção.
 
 ## Instalar o Etapix
 
 | Sistema | Instalador | Como instalar |
 |---|---|---|
-| **Windows** 10 ou 11 | [⬇ Etapix-0.1.1-x64.msi](https://github.com/Pontesrrafael/etapix/releases/download/v0.1.1-msi-validation/Etapix-0.1.1-x64.msi) | Pré-release para avaliação. Feche o Etapix antes de instalar. |
+| **Windows** 10 ou 11 | [⬇ Etapix-0.2.0-x64.msi](https://github.com/Pontesrrafael/etapix/releases/download/v0.2.0/Etapix-0.2.0-x64.msi) | Em avaliação, sem assinatura digital. Feche o Etapix antes de instalar. |
 | **Linux** (Ubuntu 22.04 ou mais novo, x86_64) | [⬇ Etapix-Linux-x86_64.tar.gz](https://github.com/Pontesrrafael/etapix/releases/latest/download/Etapix-Linux-x86_64.tar.gz) | `tar -xzf Etapix-Linux-x86_64.tar.gz && cd etapix && ./instalar.sh` |
 
 Os pacotes instalam o Etapix somente para o usuário, sem administrador. O novo MSI instala aplicativo e conector em pasta separada do EXE antigo; não remove o legado nem registra automaticamente o MCP nos assistentes. As integrações devem ser configuradas separadamente. Arquivos `.mpp` abrem, são criados e salvos em qualquer máquina, no Windows ou no Linux, sem o Microsoft Project: tarefas, estrutura, vínculos, recursos de trabalho, material e custo, taxas que mudam com o tempo, atribuições, horas extras, calendários, andamento e linha de base vão direto para o próprio `.mpp`, que guarda também o que só o Project usa (modos de exibição, formatações).
 
-Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.1.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
+Também estão em [Releases](https://github.com/Pontesrrafael/etapix/releases/latest), junto com `Etapix-Claude-Codex-0.2.0.zip`, que instala só o conector (sem o app): descompacte e dê dois cliques em `instalar.cmd`. No Claude Desktop, também basta abrir `etapix.mcpb`.
 
 
 ### Validação do novo MSI
 
-Instalação, reparo, upgrade, remoção e preservação de arquivos do usuário e configurações passaram nos [testes em Windows isolado](https://github.com/Pontesrrafael/etapix/actions/runs/40422515194). O Defender ativo do endpoint local examinou o MSI e os executáveis extraídos sem ameaças encontradas; o runner do CI não possui Defender ativo. Esse resultado não garante ausência de alertas futuros.
+Instalação, reparo, upgrade, remoção e preservação de arquivos do usuário e configurações passam nos [testes em Windows isolado](https://github.com/Pontesrrafael/etapix/actions/workflows/windows-msi.yml), que geram o pacote publicado. O Defender ativo do endpoint local examinou o MSI e os executáveis extraídos sem ameaças encontradas; o runner do CI não possui Defender ativo. Esse resultado não garante ausência de alertas futuros.
 
-Confira [o SHA-256](https://github.com/Pontesrrafael/etapix/releases/download/v0.1.1-msi-validation/Etapix-0.1.1-x64.msi.sha256) e os limites nas [notas da pré-release](https://github.com/Pontesrrafael/etapix/releases/tag/v0.1.1-msi-validation). O MSI ainda não possui assinatura confiável; o teste de download pelo navegador e a análise Microsoft da detecção original permanecem pendentes.
+Confira [o SHA-256](https://github.com/Pontesrrafael/etapix/releases/download/v0.2.0/Etapix-0.2.0-x64.msi.sha256) e os limites nas [notas da versão](https://github.com/Pontesrrafael/etapix/releases/tag/v0.2.0). O MSI ainda não possui assinatura confiável; o teste de download pelo navegador e a análise Microsoft da detecção original permanecem pendentes.
 
 ## Privacidade
 
@@ -151,7 +151,7 @@ in Claude Desktop.
 `etapix-setup` is a per-user installer with the app built in: it installs to
 `%LOCALAPPDATA%\Programs\etapix` without admin rights, adds a Start Menu shortcut and an entry in
 Windows' installed apps; uninstalling removes all three. `/silent` skips every dialog (for IT
-deployment): `etapix-setup-0.1.0.exe /silent`, and `desinstalar.exe /uninstall /silent`.
+deployment): `etapix-setup-0.2.0.exe /silent`, and `desinstalar.exe /uninstall /silent`.
 
 Build both with:
 
