@@ -1339,9 +1339,9 @@ impl App {
                     if ui.selectable_label(self.font_name.is_empty(), "Inter (Etapix)").clicked() {
                         picked = Some(String::new());
                     }
-                    let names: Vec<String> = self.installed_fonts().iter().map(|f| f.name.clone()).collect();
-                    for name in names {
-                        if ui.selectable_label(self.font_name == name, &name).clicked() {
+                    let names: Vec<(String, String)> = self.installed_fonts().iter().map(|f| (f.name.clone(), f.label())).collect();
+                    for (name, label) in names {
+                        if ui.selectable_label(self.font_name == name, label).clicked() {
                             picked = Some(name);
                         }
                     }

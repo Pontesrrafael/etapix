@@ -12,5 +12,11 @@ ARQUIVOS .MPP
 O Etapix abre, cria e salva arquivos .mpp e Project XML (.xml) no Linux por conta própria,
 sem o Microsoft Project.
 
+FONTES DO WINDOWS
+Em Tarefa > Fonte, Times New Roman, Arial, Courier New, Calibri e Cambria aparecem quando
+há uma fonte livre de mesma largura instalada (mostrada entre parênteses); Tahoma e Verdana
+usam a DejaVu Sans, a mais parecida. Para ter todas no Ubuntu:
+  sudo apt install fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu
+
 DESINSTALAR
   ~/.local/share/etapix/desinstalar.sh
