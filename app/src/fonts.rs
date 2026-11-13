@@ -10,6 +10,46 @@ pub struct Family {
     pub name: String,
     pub regular: PathBuf,
     pub bold: Option<PathBuf>,
+    /// The installed family that stands in for this one (see `STAND_INS`).
+    pub stand_in: Option<String>,
+}
+
+impl Family {
+    /// The name in the font list: "Calibri (Carlito)" when another family stands in.
+    pub fn label(&self) -> String {
+        match &self.stand_in {
+            Some(real) => format!("{} ({real})", self.name),
+            None => self.name.clone(),
+        }
+    }
+}
+
+/// Windows fonts a machine may lack (Linux has none of them) and the free families that can
+/// stand in, best first. The first three of each of Times New Roman, Arial, Courier New, Calibri
+/// and Cambria have the same letter widths, so text wraps and columns fit the same; Tahoma and
+/// Verdana have no free twin and get the closest shapes. Etapix never ships Microsoft's fonts.
+const STAND_INS: [(&str, &[&str]); 7] = [
+    ("Arial", &["Liberation Sans", "Arimo", "Nimbus Sans"]),
+    ("Calibri", &["Carlito"]),
+    ("Cambria", &["Caladea"]),
+    ("Courier New", &["Liberation Mono", "Cousine", "Nimbus Mono PS"]),
+    ("Tahoma", &["DejaVu Sans Condensed", "DejaVu Sans", "Noto Sans"]),
+    ("Times New Roman", &["Liberation Serif", "Tinos", "Nimbus Roman"]),
+    ("Verdana", &["DejaVu Sans", "Noto Sans"]),
+];
+
+/// Adds each missing Windows font whose stand-in is installed, under the Windows name.
+fn with_stand_ins(mut families: Vec<Family>) -> Vec<Family> {
+    let find = |all: &[Family], name: &str| all.iter().find(|f| f.name.eq_ignore_ascii_case(name)).cloned();
+    for (name, candidates) in STAND_INS {
+        if find(&families, name).is_some() {
+            continue;
+        }
+        if let Some(real) = candidates.iter().find_map(|c| find(&families, c)) {
+            families.push(Family { name: name.to_string(), stand_in: Some(real.name.clone()), ..real });
+        }
+    }
+    families
 }
 
 const STYLES: [&str; 14] = [
@@ -80,10 +120,12 @@ pub fn installed() -> Vec<Family> {
             // "Cambria & Cambria Math" is one file with two families; list the first.
             let family = name.split(" & ").next().unwrap_or(name).to_string();
             let bold = entries.iter().find(|(n, _)| *n == format!("{family} Bold")).map(|(_, p)| p.clone());
-            Family { name: family, regular: path.clone(), bold }
+            Family { name: family, regular: path.clone(), bold, stand_in: None }
         })
         .filter(|f| f.regular.exists())
         .collect();
+    families.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+    let mut families = with_stand_ins(families);
     families.sort_by_key(|f| f.name.to_lowercase());
     families.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
     families
@@ -139,6 +181,31 @@ pub fn load_choice() -> (String, f32) {
 
 pub fn save_choice(family: &str, size: f32) {
     save_settings(&[("font", family.to_string()), ("font_size", size.to_string())]);
+}
+
+#[cfg(test)]
+mod stand_in_tests {
+    use super::*;
+
+    fn family(name: &str) -> Family {
+        Family { name: name.into(), regular: PathBuf::from(format!("{name}.ttf")), bold: Some(PathBuf::from(format!("{name}-Bold.ttf"))), stand_in: None }
+    }
+
+    #[test]
+    fn missing_windows_fonts_get_an_installed_stand_in() {
+        let all = with_stand_ins(vec![family("Carlito"), family("DejaVu Sans"), family("Liberation Serif"), family("Arial")]);
+        let get = |n: &str| all.iter().find(|f| f.name == n);
+        let calibri = get("Calibri").expect("Calibri");
+        assert_eq!(calibri.label(), "Calibri (Carlito)");
+        assert_eq!(calibri.regular, PathBuf::from("Carlito.ttf"));
+        assert_eq!(calibri.bold, Some(PathBuf::from("Carlito-Bold.ttf")));
+        assert_eq!(get("Times New Roman").unwrap().stand_in.as_deref(), Some("Liberation Serif"));
+        // The condensed face is not here: Tahoma takes the next candidate.
+        assert_eq!(get("Tahoma").unwrap().stand_in.as_deref(), Some("DejaVu Sans"));
+        // An installed font is never replaced, and one with no stand-in installed is not listed.
+        assert_eq!(get("Arial").unwrap().label(), "Arial");
+        assert!(get("Courier New").is_none() && get("Cambria").is_none());
+    }
 }
 
 #[cfg(all(test, windows))]

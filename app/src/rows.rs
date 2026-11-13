@@ -76,7 +76,7 @@ impl Sort {
 }
 
 /// How the rows are picked and ordered.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct Display {
     pub filter: Filter,
     pub sort: Sort,
@@ -103,14 +103,19 @@ impl Display {
                 }
             }
         }
-        let mut out = Vec::new();
-        self.walk(doc, None, &keep, &mut out);
+        // Each task's subtasks, in file order; the last entry holds the top-level tasks.
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); n + 1];
+        for (i, t) in tasks.iter().enumerate() {
+            children[t.parent.unwrap_or(n)].push(i);
+        }
+        let mut out = Vec::with_capacity(n);
+        self.walk(doc, n, &mut children, &keep, &mut out);
         out
     }
 
-    fn walk(&self, doc: &Doc, parent: Option<usize>, keep: &[bool], out: &mut Vec<usize>) {
+    fn walk(&self, doc: &Doc, parent: usize, children: &mut [Vec<usize>], keep: &[bool], out: &mut Vec<usize>) {
         let tasks = &doc.project.tasks;
-        let mut children: Vec<usize> = (0..tasks.len()).filter(|&i| tasks[i].parent == parent).collect();
+        let mut children_of_parent = std::mem::take(&mut children[parent]);
         let key = |i: &usize| {
             let s = &doc.schedule[*i];
             match self.sort {
@@ -121,14 +126,16 @@ impl Display {
                 Sort::Name => (0, tasks[*i].name.to_lowercase(), *i),
             }
         };
-        children.sort_by_key(key);
-        for i in children {
+        if self.sort != Sort::Id {
+            children_of_parent.sort_by_key(key);
+        }
+        for i in children_of_parent {
             if !keep[i] {
                 continue;
             }
             out.push(i);
             if !self.collapsed.contains(&tasks[i].uid) {
-                self.walk(doc, Some(i), keep, out);
+                self.walk(doc, i, children, keep, out);
             }
         }
     }

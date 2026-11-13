@@ -223,10 +223,16 @@ impl Calendars {
             })
         };
         // Every resource has its own calendar in MSPDI; identical working time is one calendar.
-        let canonical = |c: usize| {
-            let same = |a: &Calendar, b: &Calendar| a.weekdays == b.weekdays && a.exceptions == b.exceptions;
-            (0..project.calendars.len()).find(|&j| same(&project.calendars[j], &project.calendars[c])).unwrap()
-        };
+        let same = |a: &Calendar, b: &Calendar| a.weekdays == b.weekdays && a.exceptions == b.exceptions;
+        let canon: Vec<usize> = (0..project.calendars.len())
+            .map(|c| (0..=c).find(|&j| same(&project.calendars[j], &project.calendars[c])).unwrap())
+            .collect();
+        let canonical = |c: usize| canon[c];
+        // The calendars of each task's resources, gathered in one pass over the assignments.
+        let mut resource_cals: Vec<Vec<usize>> = vec![Vec::new(); project.tasks.len()];
+        for a in &project.assignments {
+            resource_cals[a.task].push(canonical(project.resources[a.resource].calendar.unwrap_or(project.calendar)));
+        }
         let project_tl = get(vec![canonical(project.calendar)], &mut timelines);
         let mut task = Vec::with_capacity(project.tasks.len());
         for (i, t) in project.tasks.iter().enumerate() {
@@ -236,12 +242,7 @@ impl Calendars {
             }
             let mut cals: Vec<usize> = t.calendar.map(canonical).into_iter().collect();
             if !t.ignore_resource_calendar {
-                let mut res: Vec<usize> = project
-                    .assignments
-                    .iter()
-                    .filter(|a| a.task == i)
-                    .map(|a| canonical(project.resources[a.resource].calendar.unwrap_or(project.calendar)))
-                    .collect();
+                let mut res = std::mem::take(&mut resource_cals[i]);
                 res.sort_unstable();
                 res.dedup();
                 // Resources on different calendars each work their own hours (see

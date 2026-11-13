@@ -215,6 +215,8 @@ fn scrollbar(ui: &mut egui::Ui, id: &str, track: Rect, horizontal: bool, total: 
 /// Default row height; the user can change it by dragging a row border.
 const ROW: f32 = 20.0;
 const HEAD: f32 = 40.0;
+/// Most pixels a day takes in the chart (20 px an hour).
+const MAX_DAY: f32 = 480.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Col {
@@ -333,6 +335,8 @@ enum Act {
     ScrollTo,
     Info,
     Level,
+    LevelSelection,
+    LevelResource,
     ClearLevel,
     Baseline,
     ProjectInfo,
@@ -449,6 +453,16 @@ struct App {
     /// Filter, sort and collapsed summaries; `shown` is the tasks they leave, top to bottom.
     display: rows::Display,
     shown: Vec<usize>,
+    /// The display row of each task (`None` when hidden), kept with `shown`.
+    shown_row: Vec<Option<usize>>,
+    /// What `shown` was built from: it is rebuilt only when the document, the display choices or
+    /// the day change.
+    shown_key: Option<(u64, rows::Display, chrono::NaiveDate)>,
+    /// Whole rows and width the grid shows, for keeping the cursor in view.
+    page_rows: usize,
+    grid_w: f32,
+    /// Width of the whole chart, in pixels.
+    chart_total: f32,
     /// The display preferences last saved (see `save_preferences`).
     saved_prefs: Vec<(&'static str, String)>,
 }
@@ -509,6 +523,11 @@ impl App {
             suggest: true,
             display: rows::Display::default(),
             shown: Vec::new(),
+            shown_row: Vec::new(),
+            shown_key: None,
+            page_rows: 20,
+            grid_w: 600.0,
+            chart_total: 0.0,
             saved_prefs: Vec::new(),
         }
         .with_preferences()
@@ -534,7 +553,7 @@ impl App {
         let get = |k: &str| fonts::setting(k);
         let on = |k: &str| get(k).map(|v| v == "1");
         if let Some(day) = get("zoom").and_then(|v| v.parse::<f32>().ok()) {
-            self.day = day.clamp(1.5, 120.0);
+            self.day = day.clamp(1.5, MAX_DAY);
         }
         if let Some(split) = get("split").and_then(|v| v.parse::<f32>().ok()) {
             self.split = split.max(120.0);
@@ -592,6 +611,7 @@ impl App {
 
     fn set_doc(&mut self, doc: Doc) {
         self.doc = doc;
+        self.shown_key = None;
         self.gantt_interaction = gantt::Interaction::default();
         self.usage_first = None;
         self.selected.clear();
@@ -663,11 +683,61 @@ impl App {
         if i >= self.n() {
             return Some(self.shown.len() + i - self.n());
         }
+        if self.shown_row.len() == self.n() {
+            return self.shown_row[i];
+        }
         self.shown.iter().position(|&k| k == i)
     }
 
     fn refresh_shown(&mut self) {
-        self.shown = self.display.rows(&self.doc, chrono::Local::now().date_naive());
+        let key = (self.doc.version(), self.display.clone(), chrono::Local::now().date_naive());
+        if self.shown_key.as_ref() == Some(&key) && self.shown_row.len() == self.n() {
+            return;
+        }
+        self.shown = self.display.rows(&self.doc, key.2);
+        self.shown_row = vec![None; self.n()];
+        for (row, &i) in self.shown.iter().enumerate() {
+            self.shown_row[i] = Some(row);
+        }
+        self.shown_key = Some(key);
+    }
+
+    /// Selects task `i` and brings its row into view: opens the summaries above it and drops a
+    /// filter that hides it.
+    fn reveal_task(&mut self, i: usize) {
+        let mut up = self.doc.project.tasks[i].parent;
+        while let Some(p) = up {
+            self.display.collapsed.remove(&self.doc.project.tasks[p].uid);
+            up = self.doc.project.tasks[p].parent;
+        }
+        self.refresh_shown();
+        if self.row_of(i).is_none() {
+            self.display.filter = Default::default();
+            self.refresh_shown();
+        }
+        self.select_only(i);
+        self.cursor.0 = i;
+        if let Some(row) = self.row_of(i) {
+            self.scroll_y = ((row as f32 - 3.0) * self.row_h).max(0.0);
+        }
+    }
+
+    /// Scrolls the grid just enough to show the active cell.
+    fn reveal_cursor(&mut self) {
+        if let Some(row) = self.row_of(self.cursor.0) {
+            let (top, page) = (row as f32 * self.row_h, self.page_rows.max(1) as f32 * self.row_h);
+            if top < self.scroll_y {
+                self.scroll_y = top;
+            } else if top + self.row_h > self.scroll_y + page {
+                self.scroll_y = top + self.row_h - page;
+            }
+        }
+        let (x, w) = self.col_x(self.cursor.1);
+        if x < self.grid_x {
+            self.grid_x = x;
+        } else if x + w > self.grid_x + self.grid_w {
+            self.grid_x = (x + w - self.grid_w).min(x);
+        }
     }
 
     fn select_only(&mut self, row: usize) {
@@ -823,6 +893,8 @@ impl App {
                 Ok(())
             }
             Act::Level => self.doc.level(),
+            Act::LevelSelection => self.doc.level_tasks(&self.targets()),
+            Act::LevelResource => self.doc.level_resources_of(&self.targets()),
             Act::ClearLevel => self.doc.clear_leveling(),
             Act::Baseline => self.doc.save_baseline(),
             Act::ProjectInfo => {
@@ -830,7 +902,7 @@ impl App {
                 Ok(())
             }
             Act::ZoomIn => {
-                self.day = (self.day * 1.5).min(120.0);
+                self.day = (self.day * 1.5).min(MAX_DAY);
                 Ok(())
             }
             Act::ZoomOut => {
@@ -1011,7 +1083,7 @@ impl App {
             return;
         };
         let days = ((doc.dt(hi) - doc.dt(lo)).num_minutes() as f32 / 1440.0).max(0.5) + 1.0;
-        self.day = (self.chart_w / days).clamp(1.5, 120.0);
+        self.day = (self.chart_w / days).clamp(1.5, MAX_DAY);
         let x = gantt::Scale::new(doc, self.day, 0.0).x(doc.dt(lo));
         self.gantt_x = (x - self.day * 0.5).max(0.0);
     }
@@ -1023,7 +1095,7 @@ impl App {
             return;
         };
         let days = ((doc.dt(hi) - doc.dt(lo)).num_minutes() as f32 / 1440.0).max(1.0) + 2.0;
-        self.day = (self.chart_w / days).clamp(1.5, 120.0);
+        self.day = (self.chart_w / days).clamp(1.5, MAX_DAY);
         let x = gantt::Scale::new(doc, self.day, 0.0).x(doc.dt(lo));
         self.gantt_x = (x - self.day).max(0.0);
     }
@@ -1267,9 +1339,9 @@ impl App {
                     if ui.selectable_label(self.font_name.is_empty(), "Inter (Etapix)").clicked() {
                         picked = Some(String::new());
                     }
-                    let names: Vec<String> = self.installed_fonts().iter().map(|f| f.name.clone()).collect();
-                    for name in names {
-                        if ui.selectable_label(self.font_name == name, &name).clicked() {
+                    let names: Vec<(String, String)> = self.installed_fonts().iter().map(|f| (f.name.clone(), f.label())).collect();
+                    for (name, label) in names {
+                        if ui.selectable_label(self.font_name == name, label).clicked() {
                             picked = Some(name);
                         }
                     }
@@ -1398,8 +1470,10 @@ impl App {
         }
         let today = x_of(chrono::Local::now().naive_local());
         if (band.left()..=band.right()).contains(&today) {
-            p.line_segment([Pos2::new(today, band.top()), Pos2::new(today, band.bottom())], Stroke::new(1.5_f32, GREEN));
-            p.text(Pos2::new(today + 3.0, band.bottom() - 7.0), Align2::LEFT_CENTER, "Hoje", small.clone(), GREEN);
+            p.line_segment([Pos2::new(today, band.top()), Pos2::new(today, band.bottom())], Stroke::new(1.5_f32, gantt::TODAY));
+            // Near the right end the label goes to the left of the line, clear of "Término".
+            let (dx, align) = if today > band.right() - 34.0 { (-3.0, Align2::RIGHT_CENTER) } else { (3.0, Align2::LEFT_CENTER) };
+            p.text(Pos2::new(today + dx, band.bottom() - 7.0), align, "Hoje", small.clone(), gantt::TODAY);
         }
         let shown: Vec<usize> = (0..doc.project.tasks.len()).filter(|&i| self.timeline_tasks.contains(&doc.project.tasks[i].uid)).collect();
         if shown.is_empty() {
@@ -1653,14 +1727,16 @@ impl App {
     }
 
     fn move_cursor(&mut self, drow: i64, dcol: i64) {
-        let max_row = self.shown.len() + 50;
+        // The empty rows to type into end where the vertical scroll does.
+        let max_row = self.shown.len() + 29;
         let at = self.row_of(self.cursor.0).unwrap_or(0);
-        let row = self.task_at((at as i64 + drow).clamp(0, max_row as i64) as usize);
+        let row = self.task_at((at as i64).saturating_add(drow).clamp(0, max_row as i64) as usize);
         let cols = self.columns();
         let idx = cols.iter().position(|c| c.0 == self.cursor.1).unwrap_or(3) as i64;
-        let idx = (idx + dcol).clamp(1, cols.len() as i64 - 2) as usize;
+        let idx = idx.saturating_add(dcol).clamp(1, cols.len() as i64 - 2) as usize;
         self.cursor = (row, cols[idx].0);
         self.select_only(row);
+        self.reveal_cursor();
     }
 
     fn keyboard(&mut self, ctx: &egui::Context, acts: &mut Vec<Act>, was_editing: bool) {
@@ -1699,6 +1775,17 @@ impl App {
                     Key::ArrowRight | Key::Tab => self.move_cursor(0, 1),
                     Key::ArrowLeft => self.move_cursor(0, -1),
                     Key::Enter => self.move_cursor(1, 0),
+                    Key::PageDown => self.move_cursor(self.page_rows.max(2) as i64 - 1, 0),
+                    Key::PageUp => self.move_cursor(1 - self.page_rows.max(2) as i64, 0),
+                    // Ctrl+Home and Ctrl+End: first and last task; alone: first and last column.
+                    Key::Home if modifiers.ctrl => self.move_cursor(i64::MIN, i64::MIN),
+                    Key::End if modifiers.ctrl => {
+                        let last = self.shown.len().saturating_sub(1) as i64 - self.row_of(self.cursor.0).unwrap_or(0) as i64;
+                        self.move_cursor(last, 0);
+                    }
+                    Key::Home => self.move_cursor(0, i64::MIN),
+                    Key::End => self.move_cursor(0, i64::MAX),
+                    Key::F if modifiers.ctrl => acts.push(Act::Find),
                     Key::F2 if modifiers.shift => acts.push(Act::Info),
                     Key::F2 => self.begin_edit(self.cursor.0, self.cursor.1, None),
                     Key::Delete => acts.push(Act::Delete),
@@ -1737,8 +1824,11 @@ impl App {
         let n = self.n();
         let head = Rect::from_min_max(area.min, Pos2::new(area.right(), area.top() + HEAD));
         let body = Rect::from_min_max(Pos2::new(area.left(), head.bottom()), area.max);
-        let total_w: f32 = self.columns().iter().map(|c| c.2).sum();
+        let cols = self.columns();
+        let total_w: f32 = cols.iter().map(|c| c.2).sum();
         self.grid_x = self.grid_x.clamp(0.0, (total_w - area.width()).max(0.0));
+        self.grid_w = area.width();
+        self.page_rows = ((body.height() / self.row_h).floor() as usize).max(1);
         let left = area.left() - self.grid_x;
         let p = ui.painter_at(area);
         p.rect_filled(area, 0.0, Color32::WHITE);
@@ -1798,7 +1888,7 @@ impl App {
                 pb.rect_filled(line, 0.0, SELECTED);
             }
             let mut x = left;
-            for (col, _, w) in self.columns() {
+            for &(col, _, w) in &cols {
                 let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, self.row_h));
                 x += w;
                 if col == Col::Num {
@@ -1996,14 +2086,17 @@ impl App {
         let body = Rect::from_min_max(Pos2::new(area.left(), head.bottom()), area.max);
         let probe = gantt::Scale::new(&self.doc, self.day, 0.0);
         if self.scroll_to_start {
-            self.gantt_x = (probe.x(self.doc.project.start) - 3.0 * self.day).max(0.0);
+            // A few days before the start, but never so much that a zoomed-in chart opens empty.
+            self.gantt_x = (probe.x(self.doc.project.start) - (3.0 * self.day).min(60.0)).max(0.0);
             self.scroll_to_start = false;
         }
-        self.gantt_x = self.gantt_x.clamp(0.0, (probe.width(&self.doc) - area.width()).max(0.0));
+        self.chart_total = probe.width(&self.doc);
+        self.gantt_x = self.gantt_x.clamp(0.0, (self.chart_total - area.width()).max(0.0));
         let scale = gantt::Scale::new(&self.doc, self.day, area.left() - self.gantt_x);
         gantt::header(&ui.painter_at(head), head, &scale);
         let p = ui.painter_at(body);
         gantt::background(&p, body, &scale, &self.doc);
+        gantt::row_lines(&p, body, self.row_h, self.scroll_y);
         let n = self.n();
         for row in self.selected.iter().filter_map(|&i| self.row_of(i)) {
             let y = body.top() + row as f32 * self.row_h - self.scroll_y;
@@ -2014,7 +2107,7 @@ impl App {
         for (row, &i) in self.shown.iter().enumerate() {
             mid[i] = Some(body.top() + row as f32 * self.row_h - self.scroll_y + self.row_h / 2.0);
         }
-        gantt::links(&p, &scale, &self.doc, |i| mid[i], self.row_h);
+        gantt::links(&p, &scale, &self.doc, |i| mid[i], self.row_h, (body.top(), body.bottom()));
         for &i in &self.shown {
             let m = mid[i].unwrap_or(f32::MIN);
             if m > body.top() - self.row_h && m < body.bottom() + self.row_h {
@@ -2101,7 +2194,7 @@ impl App {
         if let Some(c) = chart {
             self.chart_w = c.width();
             self.chart(ui, c);
-            let total = gantt::Scale::new(&self.doc, self.day, 0.0).width(&self.doc).max(c.width());
+            let total = self.chart_total.max(c.width());
             let track = Rect::from_min_max(Pos2::new(c.left(), c.bottom()), Pos2::new(c.right(), c.bottom() + BAR));
             scrollbar(ui, "chart-h", track, true, total, c.width(), &mut self.gantt_x);
         }

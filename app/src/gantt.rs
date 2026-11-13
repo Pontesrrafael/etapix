@@ -8,6 +8,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, St
 
 use crate::doc::{Doc, GanttEdit};
 use crate::fmt;
+use pjsched::model::LinkType;
 
 pub const BAR: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
 pub const BAR_EDGE: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
@@ -17,7 +18,11 @@ const PROGRESS: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x66);
 const NONWORKING: Color32 = Color32::from_rgb(0xEE, 0xF3, 0xF6);
 const LINE: Color32 = Color32::from_rgb(0xDC, 0xE5, 0xEA);
 const TEXT: Color32 = Color32::from_rgb(0x1E, 0x2F, 0x3E);
-const TODAY: Color32 = Color32::from_rgb(0x14, 0xC3, 0x8E);
+/// Orange, so the line stands out from the bars (green) and from critical tasks (red).
+pub const TODAY: Color32 = Color32::from_rgb(0xF2, 0x8C, 0x28);
+
+/// From this many pixels a day on, the header shows hours ("Horas" in Exibir > Escala de Tempo).
+pub const HOURS: f32 = 40.0;
 
 /// Horizontal mapping: the chart starts on the Sunday before the project start.
 pub struct Scale {
@@ -65,7 +70,39 @@ pub fn header(p: &Painter, rect: Rect, s: &Scale) {
     let font = FontId::proportional(11.0);
     let (d0, d1) = (s.date_at(rect.left()), s.date_at(rect.right()) + Duration::days(1));
     let stroke = Stroke::new(1.0_f32, LINE);
-    if s.day >= 10.0 {
+    if s.day >= HOURS {
+        // Days over hours, as many hour marks as fit.
+        let hour = s.day / 24.0;
+        let step = [1, 2, 3, 4, 6, 12].into_iter().find(|&h| h as f32 * hour >= 22.0).unwrap_or(12);
+        let mut d = d0;
+        while d <= d1 {
+            let x = s.x_date(d);
+            p.line_segment([Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())], stroke);
+            p.text(Pos2::new(x + 4.0, rect.top() + 10.0), Align2::LEFT_CENTER, fmt::date(d.and_hms_opt(0, 0, 0).unwrap()), font.clone(), TEXT);
+            for h in (0..24).step_by(step) {
+                let hx = x + h as f32 * hour;
+                p.line_segment([Pos2::new(hx, mid), Pos2::new(hx, rect.bottom())], stroke);
+                p.text(Pos2::new(hx + 3.0, mid + 10.0), Align2::LEFT_CENTER, format!("{h}h"), font.clone(), TEXT);
+            }
+            d += Duration::days(1);
+        }
+    } else if s.day < 3.0 {
+        // Years over months.
+        let mut m = NaiveDate::from_ymd_opt(d0.year(), d0.month(), 1).unwrap();
+        p.text(Pos2::new(rect.left() + 4.0, rect.top() + 10.0), Align2::LEFT_CENTER, m.year().to_string(), font.clone(), TEXT);
+        while m <= d1 {
+            let x = s.x_date(m);
+            if m.month() == 1 {
+                p.line_segment([Pos2::new(x, rect.top()), Pos2::new(x, mid)], stroke);
+                if x > rect.left() + 40.0 {
+                    p.text(Pos2::new(x + 4.0, rect.top() + 10.0), Align2::LEFT_CENTER, m.year().to_string(), font.clone(), TEXT);
+                }
+            }
+            p.line_segment([Pos2::new(x, mid), Pos2::new(x, rect.bottom())], stroke);
+            p.text(Pos2::new(x + 3.0, mid + 10.0), Align2::LEFT_CENTER, fmt::MONTHS[m.month0() as usize], font.clone(), TEXT);
+            m = if m.month() == 12 { NaiveDate::from_ymd_opt(m.year() + 1, 1, 1) } else { NaiveDate::from_ymd_opt(m.year(), m.month() + 1, 1) }.unwrap();
+        }
+    } else if s.day >= 10.0 {
         // Weeks (from Sunday) over days.
         let mut w = d0 - Duration::days(d0.weekday().num_days_from_sunday() as i64);
         while w <= d1 {
@@ -121,6 +158,16 @@ pub fn background(p: &Painter, rect: Rect, s: &Scale, doc: &Doc) {
     }
     let now = s.x(Local::now().naive_local());
     dashed(p, Pos2::new(now, rect.top()), rect.bottom(), TODAY);
+}
+
+/// A faint line under each row, so a bar is easy to pair with its row in the grid.
+pub fn row_lines(p: &Painter, rect: Rect, row_h: f32, scroll_y: f32) {
+    let stroke = Stroke::new(1.0_f32, NONWORKING);
+    let mut y = rect.top() + row_h - scroll_y % row_h;
+    while y < rect.bottom() {
+        p.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], stroke);
+        y += row_h;
+    }
 }
 
 fn dashed(p: &Painter, top: Pos2, bottom: f32, color: Color32) {
@@ -216,43 +263,65 @@ pub fn bar(p: &Painter, s: &Scale, doc: &Doc, i: usize, mid: f32, opts: Options)
 
 /// Finish-to-start arrows (the other link types are drawn the same way from their anchors).
 /// `mid_of` gives a task's row centre, or `None` for a task not on display.
-pub fn links(p: &Painter, s: &Scale, doc: &Doc, mid_of: impl Fn(usize) -> Option<f32>, row: f32) {
+/// `visible` is the vertical span on screen: a link wholly above or below it is not drawn.
+pub fn links(p: &Painter, s: &Scale, doc: &Doc, mid_of: impl Fn(usize) -> Option<f32>, row: f32, visible: (f32, f32)) {
     let stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x3D, 0x5A, 0x6C));
+    let path = |points: &[Pos2]| points.windows(2).for_each(|w| { p.line_segment([w[0], w[1]], stroke); });
     for (i, t) in doc.project.tasks.iter().enumerate() {
-        let xs = s.x(doc.dt(doc.schedule[i].start));
+        if t.preds.is_empty() {
+            continue;
+        }
         let Some(ys) = mid_of(i) else { continue };
         for link in &t.preds {
-            let pf = s.x(doc.dt(doc.schedule[link.pred].finish));
             let Some(yp) = mid_of(link.pred) else { continue };
+            if (ys < visible.0 && yp < visible.0) || (ys > visible.1 && yp > visible.1) {
+                continue;
+            }
+            // Each link type leaves and enters at its own end of the bars, as in Project.
+            let (from_start, to_start) = match link.kind {
+                LinkType::FinishToStart => (false, true),
+                LinkType::StartToStart => (true, true),
+                LinkType::FinishToFinish => (false, false),
+                LinkType::StartToFinish => (true, false),
+            };
+            let end = |task: usize, start: bool| {
+                let sch = &doc.schedule[task];
+                s.x(doc.dt(if start { sch.start } else { sch.finish }))
+            };
+            let (pf, xs) = (end(link.pred, from_start), end(i, to_start));
             let down = ys > yp;
-            let edge = if down { ys - 6.0 } else { ys + 6.0 };
-            if xs >= pf + 4.0 {
+            let gap = if down { yp + row / 2.0 } else { yp - row / 2.0 };
+            if link.kind == LinkType::FinishToStart && xs >= pf + 4.0 {
                 // Right from the predecessor, then down (or up) into the successor's start.
+                let edge = if down { ys - 6.0 } else { ys + 6.0 };
                 let x = xs + 3.0;
-                p.line_segment([Pos2::new(pf, yp), Pos2::new(x, yp)], stroke);
-                p.line_segment([Pos2::new(x, yp), Pos2::new(x, edge)], stroke);
+                path(&[Pos2::new(pf, yp), Pos2::new(x, yp), Pos2::new(x, edge)]);
                 let dir = if down { 1.0 } else { -1.0 };
                 p.add(Shape::convex_polygon(
                     vec![Pos2::new(x - 3.0, edge - 4.0 * dir), Pos2::new(x + 3.0, edge - 4.0 * dir), Pos2::new(x, edge)],
                     stroke.color,
                     Stroke::NONE,
                 ));
-            } else {
-                // Back-routed: out to the right, along the row gap, into the successor from the left.
-                let out = pf + 6.0;
-                let gap = if down { yp + row / 2.0 } else { yp - row / 2.0 };
-                let back = xs - 8.0;
-                p.line_segment([Pos2::new(pf, yp), Pos2::new(out, yp)], stroke);
-                p.line_segment([Pos2::new(out, yp), Pos2::new(out, gap)], stroke);
-                p.line_segment([Pos2::new(out, gap), Pos2::new(back, gap)], stroke);
-                p.line_segment([Pos2::new(back, gap), Pos2::new(back, ys)], stroke);
-                p.line_segment([Pos2::new(back, ys), Pos2::new(xs, ys)], stroke);
-                p.add(Shape::convex_polygon(
-                    vec![Pos2::new(xs - 4.0, ys - 3.0), Pos2::new(xs - 4.0, ys + 3.0), Pos2::new(xs, ys)],
-                    stroke.color,
-                    Stroke::NONE,
-                ));
+                continue;
             }
+            // Out of the predecessor's end, along a channel, into the successor's end sideways.
+            let (out, into) = (if from_start { -1.0 } else { 1.0 }, if to_start { 1.0 } else { -1.0 });
+            let (a, b) = (pf + out * 6.0, xs - into * 8.0);
+            if out != into {
+                // Start-to-start and finish-to-finish: one channel outside both bars.
+                let x = if from_start { a.min(b) } else { a.max(b) };
+                path(&[Pos2::new(pf, yp), Pos2::new(x, yp), Pos2::new(x, ys), Pos2::new(xs, ys)]);
+            } else if (b - a) * out >= 0.0 {
+                path(&[Pos2::new(pf, yp), Pos2::new(a, yp), Pos2::new(a, ys), Pos2::new(xs, ys)]);
+            } else {
+                // Back-routed along the row gap.
+                path(&[Pos2::new(pf, yp), Pos2::new(a, yp), Pos2::new(a, gap), Pos2::new(b, gap), Pos2::new(b, ys), Pos2::new(xs, ys)]);
+            }
+            p.add(Shape::convex_polygon(
+                vec![Pos2::new(xs - into * 4.0, ys - 3.0), Pos2::new(xs - into * 4.0, ys + 3.0), Pos2::new(xs, ys)],
+                stroke.color,
+                Stroke::NONE,
+            ));
         }
     }
 }

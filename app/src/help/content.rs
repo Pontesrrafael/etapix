@@ -89,7 +89,7 @@ pub const TUTORIALS: &[Tutorial] = &[
                     "Digite o número da tarefa anterior. Para outros vínculos, acrescente TI (término-início), II (início-início), TT (término-término) ou IT (início-término) e uma defasagem opcional, como 2TI+2 dias ou 3II-1d. Separe várias com ponto e vírgula.",
                     "Pressione Enter.",
                 ],
-                check: "A data de início se move e uma seta liga as barras no Gantt.",
+                check: "A data se ajusta e uma seta liga as barras no Gantt na ponta correspondente ao tipo de vínculo.",
                 fails: "\"predecessora inválida\": sintaxe fora do padrão acima. \"não existe tarefa N\": número que não está na grade. \"os vínculos formam um ciclo\": a tarefa depende dela mesma. Nada é alterado nesses casos.",
             },
             Procedure {
@@ -104,10 +104,11 @@ pub const TUTORIALS: &[Tutorial] = &[
         ],
         tips: &[
             "F2 edita a célula selecionada; Tab vai para a coluna seguinte; Delete exclui as tarefas selecionadas; Insert insere uma tarefa.",
+            "PageUp e PageDown navegam uma página; Home e End vão à primeira e à última coluna; Ctrl+Home e Ctrl+End, à primeira e à última tarefa; Ctrl+F abre Localizar.",
             "Alt+Shift+→ recua e Alt+Shift+← avança a tarefa.",
             "Ctrl+Z desfaz e Ctrl+Y refaz cada edição.",
             "Dois cliques na coluna Modo da Tarefa alternam entre manual e automático.",
-            "Uma data digitada em Início vira a restrição \"Não iniciar antes de\", como no Project.",
+            "Uma data digitada em Início vira a restrição \"Não iniciar antes de\", como no Project; um projeto em branco começa no primeiro horário útil (09:00).",
         ],
         limits: "Digitar no Término muda a duração (em dias úteis). Adicionar Nova Coluna oferece % Concluída, Trabalho, Custo, Margem de Atraso Total e as datas da linha de base; clique com o botão direito no título de uma delas para ocultá-la. A altura vale para todas as linhas.",
         tour: &[
@@ -134,7 +135,7 @@ pub const TUTORIALS: &[Tutorial] = &[
             "Agendar manual ou automaticamente, mover tarefas e respeitar vínculos (grupo Tarefas)",
             "Recortar, copiar e colar tarefas (grupo Área de Transferência)",
             "Escolher a fonte e o tamanho do texto (grupo Fonte)",
-            "Ver informações, adicionar à linha do tempo, rolar até a tarefa e localizar",
+            "Ver informações (Shift+F2), adicionar à linha do tempo, rolar até a tarefa e localizar (Ctrl+F)",
         ],
         procedures: &[
             Procedure {
@@ -163,6 +164,7 @@ pub const TUTORIALS: &[Tutorial] = &[
         tips: &[
             "Mover desloca o início em dias corridos (1 dia a 4 semanas, para frente ou para trás) e grava a restrição \"Não iniciar antes de\".",
             "Respeitar Vínculos traz uma tarefa manual de volta para a data que os vínculos indicam.",
+            "Localizar (Ctrl+F) procura tarefas pelo nome, abre resumos recolhidos ou limpa o filtro se preciso e rola até a tarefa.",
             "Limpar exclui as tarefas selecionadas. Ctrl+Z desfaz.",
         ],
         limits: "A maioria dos comandos precisa de uma tarefa selecionada. Em cinza nesta versão: Pincel de Formatação, Negrito/Itálico/Sublinhado, Inativar, Inspecionar, Modo, Entregável, Anotações, Detalhes e Preencher.",
@@ -181,7 +183,7 @@ pub const TUTORIALS: &[Tutorial] = &[
         tab: Some(Tab::File),
         title: "Arquivo",
         summary: "Crie, abra e salve projetos em .mpp e Project XML. Abrir, criar e salvar .mpp não precisam do Microsoft Project.",
-        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir .mpp em qualquer máquina, sem o Microsoft Project", "Criar .mpp novos e salvar no próprio .mpp, sem o Project: tarefas, vínculos, recursos, calendários, andamento e linha de base", "Abrir e salvar Project XML (.xml) em qualquer sistema"],
+        capabilities: &["Novo, Abrir, Salvar e Salvar como", "Abrir .mpp em qualquer máquina, sem o Microsoft Project", "Criar .mpp novos e salvar no próprio .mpp, sem o Project: tarefas, vínculos, recursos, calendários, andamento e linha de base", "Abrir e salvar Project XML (.xml) em qualquer sistema", "Exportar PDF (tabela e Gantt) e Exportar relatórios em A4 paisagem"],
         procedures: &[
             Procedure {
                 title: "Abrir um .mpp",
@@ -210,7 +212,11 @@ pub const TUTORIALS: &[Tutorial] = &[
         tab: Some(Tab::Resource),
         title: "Recurso",
         summary: "Cadastre quem executa as tarefas, atribua essas pessoas e resolva superalocações.",
-        capabilities: &["Adicionar Recursos (recurso de trabalho, 100%)", "Atribuir Recursos à tarefa selecionada", "Nivelar Seleção, Nivelar Recurso, Nivelar Tudo e Limpar Nivelamento"],
+        capabilities: &[
+            "Adicionar Recursos (recurso de trabalho, 100%)",
+            "Atribuir Recursos à tarefa selecionada",
+            "Nivelar Seleção (só as tarefas selecionadas), Nivelar Recurso (tarefas dos recursos da tarefa selecionada), Nivelar Tudo e Limpar Nivelamento",
+        ],
         procedures: &[
             Procedure {
                 title: "Atribuir recursos",
@@ -220,13 +226,17 @@ pub const TUTORIALS: &[Tutorial] = &[
             },
             Procedure {
                 title: "Resolver superalocação",
-                steps: &["Clique em Nivelar Tudo.", "Confira as datas que mudaram.", "Se não gostar, use Limpar Nivelamento ou Ctrl+Z."],
+                steps: &[
+                    "Clique em Nivelar Tudo (projeto inteiro), Nivelar Seleção (só as tarefas selecionadas) ou Nivelar Recurso (tarefas dos recursos da tarefa selecionada).",
+                    "Confira as datas que mudaram.",
+                    "Se não gostar, use Limpar Nivelamento ou Ctrl+Z.",
+                ],
                 check: "Tarefas que disputavam o mesmo recurso passam a ficar em sequência.",
                 fails: "Sem recursos atribuídos, o nivelamento não muda nada.",
             },
         ],
         tips: &["O nivelamento usa as opções padrão do Project e grava os atrasos de nivelamento no arquivo."],
-        limits: "Nesta versão, os três botões de nivelar nivelam o projeto inteiro. Em cinza: Organizador de Equipe, Pool de Recursos, Informações do recurso, Anotações, Detalhes, Opções de Nivelamento e Próxima Superalocação.",
+        limits: "Nivelar Seleção e Nivelar Recurso exigem uma tarefa selecionada. Taxas de recurso vêm de arquivos abertos; calendários de recurso são editados em Projeto > Alterar Período de Trabalho. Em cinza: Organizador de Equipe, Pool de Recursos, Informações do recurso, Anotações, Detalhes, Opções de Nivelamento e Próxima Superalocação.",
         tour: &[
             step("recurso.atribuicoes", Some(Tab::Resource), "Atribuições", "Escolha quem trabalha na tarefa selecionada.", Missing::Skip),
             step("recurso.inserir", Some(Tab::Resource), "Adicionar Recursos", "Cadastre as pessoas do projeto.", Missing::Skip),
@@ -240,18 +250,39 @@ pub const TUTORIALS: &[Tutorial] = &[
         icon: Icon::Calc,
         tab: Some(Tab::Project),
         title: "Projeto",
-        summary: "Ajuste o projeto inteiro: data de início, linha de base e recálculo.",
-        capabilities: &["Informações do Projeto (data de início)", "Definir Linha de Base", "Mover Projeto (nova data de início)", "Calcular Projeto"],
-        procedures: &[Procedure {
-            title: "Definir a linha de base",
-            steps: &["Termine de planejar.", "Clique em Definir Linha de Base.", "Para ver a comparação, marque Formato > Linha de Base."],
-            check: "Uma barra cinza aparece sob cada tarefa no Gantt.",
-            fails: "Definir de novo substitui a linha de base anterior. Use Ctrl+Z para voltar.",
-        }],
-        tips: &["Mover Projeto desloca todas as tarefas automáticas; as manuais e as restrições de data ficam onde estão."],
+        summary: "Ajuste o projeto inteiro: data de início, calendário de trabalho, linha de base e recálculo.",
+        capabilities: &[
+            "Informações do Projeto (data de início)",
+            "Alterar Período de Trabalho (expediente semanal e feriados do projeto ou de cada recurso)",
+            "Definir Linha de Base",
+            "Mover Projeto (nova data de início)",
+            "Calcular Projeto",
+        ],
+        procedures: &[
+            Procedure {
+                title: "Definir a linha de base",
+                steps: &["Termine de planejar.", "Clique em Definir Linha de Base.", "Para ver a comparação, marque Formato > Linha de Base."],
+                check: "Uma barra cinza aparece sob cada tarefa no Gantt.",
+                fails: "Definir de novo substitui a linha de base anterior. Use Ctrl+Z para voltar.",
+            },
+            Procedure {
+                title: "Alterar expediente e feriados",
+                steps: &[
+                    "Clique em Alterar Período de Trabalho, no grupo Propriedades.",
+                    "Escolha o calendário do projeto ou de um recurso.",
+                    "Ajuste os turnos dos dias úteis (ex.: 09:00-12:00, 13:00-18:00) ou adicione exceções/feriados e clique em OK.",
+                ],
+                check: "Os dias de folga ficam sombreados no Gantt e as datas das tarefas são recalculadas.",
+                fails: "Turnos sobrepostos, horários inválidos ou semana sem dia útil mostram o erro na janela.",
+            },
+        ],
+        tips: &[
+            "Mover Projeto desloca todas as tarefas automáticas; as manuais e as restrições de data ficam onde estão.",
+            "Um projeto em branco começa no primeiro horário útil do calendário padrão (09:00).",
+        ],
         limits: "Em cinza: Subprojeto, Suplementos, Campos Personalizados, Vínculos Entre Projetos, EAP, Data de Status, Atualizar Projeto e Ortografia. Só a linha de base 0 é gravada.",
         tour: &[
-            step("projeto.propriedades", Some(Tab::Project), "Informações do Projeto", "A data de início de todo o cronograma.", Missing::Skip),
+            step("projeto.propriedades", Some(Tab::Project), "Propriedades", "Data de início e calendário de trabalho do projeto.", Missing::Skip),
             step("projeto.cronograma", Some(Tab::Project), "Cronograma", "Linha de base, recálculo e Mover Projeto.", Missing::Skip),
             step("ajuda.como_usar", Some(Tab::Project), "Como usar", "O passo a passo completo desta aba fica aqui.", Missing::Center),
         ],
@@ -262,21 +293,36 @@ pub const TUTORIALS: &[Tutorial] = &[
         icon: Icon::Whole,
         tab: Some(Tab::View),
         title: "Exibir",
-        summary: "Escolha o que ver e como: modo de exibição, zoom e escala de tempo.",
+        summary: "Escolha o que ver e como: modo de exibição, filtro, ordenação, estrutura, zoom e escala de tempo.",
         capabilities: &[
-            "Gráfico de Gantt ou Planilha de Tarefas; Planilha de Recursos",
+            "Gráfico de Gantt, Uso da Tarefa (horas por dia) ou Planilha de Tarefas; Planilha de Recursos",
+            "Classificar, Estrutura de Tópicos (Mostrar Nível 1 a 9) e Filtro (críticas, concluídas, atrasadas, marcos, resumos)",
             "Escala de Tempo (Horas, Dias, Semanas, Meses), Ampliar e Reduzir",
             "Projeto Inteiro e Tarefas Selecionadas",
             "Mostrar ou ocultar a Linha do Tempo",
         ],
-        procedures: &[Procedure {
-            title: "Ver o projeto inteiro",
-            steps: &["Clique em Projeto Inteiro, no grupo Zoom."],
-            check: "Todas as barras cabem na largura do Gantt.",
-            fails: "Num projeto muito longo, as barras ficam finas: use Tarefas Selecionadas para aproximar uma parte.",
-        }],
-        tips: &["Shift + roda do mouse rola o Gantt na horizontal; arrastar a divisa entre a grade e o Gantt muda o espaço de cada um."],
-        limits: "Classificar mantém a estrutura de tópicos, e o filtro mostra também os resumos das tarefas que passam por ele; nenhum dos dois muda a ordem no arquivo. Em cinza: Diagrama de Rede, Calendário, Organizador de Equipe, Uso do Recurso, Tabelas, Realce, Agrupar por, Detalhes, Janela e Macros.",
+        procedures: &[
+            Procedure {
+                title: "Ver o projeto inteiro",
+                steps: &["Clique em Projeto Inteiro, no grupo Zoom."],
+                check: "Todas as barras cabem na largura do Gantt.",
+                fails: "Num projeto muito longo, as barras ficam finas: use Tarefas Selecionadas para aproximar uma parte.",
+            },
+            Procedure {
+                title: "Filtrar, classificar ou ver o Uso da Tarefa",
+                steps: &[
+                    "No grupo Dados, use Classificar, Estrutura de Tópicos ou o menu de filtro para escolher o que a grade mostra.",
+                    "Para ver as horas planejadas por dia de cada tarefa e recurso, clique em Uso da Tarefa.",
+                ],
+                check: "A grade e o Gantt mostram apenas as linhas escolhidas, ou a tabela diária de horas se abre.",
+                fails: "Para voltar a ver todas as tarefas, escolha [Sem Filtro] e Estrutura de Tópicos > Todas as Subtarefas.",
+            },
+        ],
+        tips: &[
+            "Shift + roda do mouse rola o Gantt na horizontal; arrastar a divisa entre a grade e o Gantt muda o espaço de cada um.",
+            "Na escala Horas o cabeçalho mostra dias e horas; em Meses, anos e meses.",
+        ],
+        limits: "Classificar mantém a estrutura de tópicos, e o filtro mostra também os resumos das tarefas que passam por ele; nenhum dos dois muda a ordem no arquivo. Uso da Tarefa é somente leitura. Em cinza: Diagrama de Rede, Calendário, Organizador de Equipe, Uso do Recurso, Outros Modos de Exibição, Tabelas, Realce, Agrupar por, Detalhes, Janela e Macros.",
         tour: &[
             step("exibir.zoom", Some(Tab::View), "Zoom", "Escala de tempo, ampliar, reduzir e caber o projeto inteiro.", Missing::Skip),
             step("exibir.modo_divisao", Some(Tab::View), "Linha do Tempo", "Mostre ou oculte a faixa de resumo acima da grade.", Missing::Skip),

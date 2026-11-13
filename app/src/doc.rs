@@ -49,11 +49,13 @@ pub struct Doc {
 const UNDO_LIMIT: usize = 200;
 
 impl Doc {
-    /// An empty project starting next Monday 08:00.
+    /// An empty project starting next Monday, when the standard calendar's first shift begins
+    /// (a start before working time would show the first task's dates an hour apart).
     pub fn blank() -> Self {
         let today = Local::now().date_naive();
         let monday = today + Duration::days((7 - today.weekday().num_days_from_monday() as i64) % 7);
-        let start = monday.and_hms_opt(8, 0, 0).unwrap();
+        let first = pjsched::calendar::Calendar::standard().shifts(monday).first().map_or(8 * 60, |s| s.0);
+        let start = monday.and_hms_opt(first / 60, first % 60, 0).unwrap();
         Doc::from_project(Project::new(start), None).expect("an empty project always schedules")
     }
 
@@ -547,11 +549,34 @@ impl Doc {
 
     /// Levels resources (Project's defaults) and keeps the result as saved leveling delays.
     pub fn level(&mut self) -> Result<(), String> {
-        self.clear_leveling()?;
-        let leveled =
-            leveling::level(&self.project, &self.cals, LevelingOptions::default()).map_err(|e| format!("{e:?}"))?;
+        self.level_where(|_, _| true)
+    }
+
+    /// Levels only the given tasks (Project's "Nivelar Seleção"); the others keep their dates.
+    pub fn level_tasks(&mut self, rows: &[usize]) -> Result<(), String> {
+        self.level_where(|_, i| rows.contains(&i))
+    }
+
+    /// Levels the tasks of the resources assigned to the given tasks (Project's "Nivelar
+    /// Recurso").
+    pub fn level_resources_of(&mut self, rows: &[usize]) -> Result<(), String> {
+        let resources: Vec<usize> = self.project.assignments.iter().filter(|a| rows.contains(&a.task)).map(|a| a.resource).collect();
+        if resources.is_empty() {
+            return Err("selecione uma tarefa que tenha o recurso a nivelar".into());
+        }
+        self.level_where(|p, i| p.assignments.iter().any(|a| a.task == i && resources.contains(&a.resource)))
+    }
+
+    fn level_where(&mut self, movable: impl Fn(&Project, usize) -> bool) -> Result<(), String> {
+        let movable: Vec<bool> = (0..self.project.tasks.len()).map(|i| movable(&self.project, i)).collect();
         self.apply(|p| {
-            for (t, s) in p.tasks.iter_mut().zip(&leveled) {
+            p.tasks.iter_mut().zip(&movable).filter(|(_, m)| **m).for_each(|(t, _)| t.leveling_delay = 0);
+            Ok(())
+        })?;
+        let leveled = leveling::level_only(&self.project, &self.cals, LevelingOptions::default(), Some(&movable))
+            .map_err(|e| format!("{e:?}"))?;
+        self.apply(|p| {
+            for ((t, s), _) in p.tasks.iter_mut().zip(&leveled).zip(&movable).filter(|(_, m)| **m) {
                 t.leveling_delay = s.leveling_delay;
             }
             Ok(())
@@ -641,9 +666,12 @@ fn renumber(p: &mut Project) {
 
 /// A task is a summary exactly when some task has it as parent.
 fn refresh_summaries(p: &mut Project) {
-    let parents: Vec<usize> = p.tasks.iter().filter_map(|t| t.parent).collect();
-    for (k, t) in p.tasks.iter_mut().enumerate() {
-        t.summary = parents.contains(&k);
+    let mut parent = vec![false; p.tasks.len()];
+    for k in p.tasks.iter().filter_map(|t| t.parent) {
+        parent[k] = true;
+    }
+    for (t, is_parent) in p.tasks.iter_mut().zip(parent) {
+        t.summary = is_parent;
     }
 }
 
@@ -810,6 +838,43 @@ mod tests {
         d.outdent(2).unwrap();
         assert_eq!(d.project.tasks[2].parent, None);
         assert_eq!(d.project.tasks[3].parent, Some(2));
+    }
+
+    #[test]
+    fn leveling_a_selection_moves_only_it() {
+        let mut d = Doc::blank();
+        d.add_task("A", 2.0).unwrap();
+        d.add_task("B", 2.0).unwrap();
+        d.add_task("C", 1.0).unwrap();
+        d.set_resources(0, "Ana").unwrap();
+        d.set_resources(1, "Ana").unwrap();
+        d.set_resources(2, "Bia").unwrap();
+        let start = d.schedule[0].start;
+        // Only B may move: it waits for A.
+        d.level_tasks(&[1]).unwrap();
+        assert_eq!(d.schedule[0].start, start);
+        assert_eq!(d.schedule[1].start, d.cals.task(1).snap_start(d.schedule[0].finish));
+        // Leveling A alone keeps B's delay, and A has room before it.
+        d.level_tasks(&[0]).unwrap();
+        assert!(d.project.tasks[1].leveling_delay > 0);
+        assert_eq!(d.schedule[0].start, start);
+        // With both back at the start and only A allowed to move, A goes after B.
+        d.clear_leveling().unwrap();
+        d.level_tasks(&[0]).unwrap();
+        assert_eq!(d.schedule[1].start, start);
+        assert!(d.schedule[0].start >= d.schedule[1].finish);
+        // By resource: Bia's task picks only her tasks, and Ana's stay as they were.
+        let before: Vec<_> = d.schedule.iter().map(|s| s.start).collect();
+        d.level_resources_of(&[2]).unwrap();
+        assert_eq!(d.schedule.iter().map(|s| s.start).collect::<Vec<_>>(), before);
+        assert!(d.level_resources_of(&[]).is_err());
+    }
+
+    #[test]
+    fn a_blank_project_starts_in_working_time() {
+        let mut d = Doc::blank();
+        d.add_task("A", 1.0).unwrap();
+        assert_eq!(d.dt(d.schedule[0].start), d.project.start);
     }
 
     #[test]

@@ -234,10 +234,10 @@ impl App {
         });
         let rect = group(ui, "Nível", |ui| {
             if big_button(ui, Icon::Level, "Nivelar\nSeleção", has) {
-                acts.push(Act::Level);
+                acts.push(Act::LevelSelection);
             }
-            if big_button(ui, Icon::Level, "Nivelar\nRecurso", true) {
-                acts.push(Act::Level);
+            if big_button(ui, Icon::Level, "Nivelar\nRecurso", has) {
+                acts.push(Act::LevelResource);
             }
             if big_button(ui, Icon::Level, "Nivelar\nTudo", true) {
                 acts.push(Act::Level);
@@ -319,7 +319,7 @@ impl App {
                     ui.label("Escala de Tempo:");
                     let current = if self.day >= 40.0 { "Horas" } else if self.day >= 10.0 { "Dias" } else if self.day >= 3.0 { "Semanas" } else { "Meses" };
                     egui::ComboBox::from_id_salt("timescale").selected_text(current).width(90.0).show_ui(ui, |ui| {
-                        for (label, day) in [("Horas", 80.0), ("Dias", 22.0), ("Semanas", 6.0), ("Meses", 2.0)] {
+                        for (label, day) in [("Horas", 240.0), ("Dias", 22.0), ("Semanas", 6.0), ("Meses", 2.0)] {
                             if ui.selectable_label(current == label, label).clicked() {
                                 acts.push(Act::Timescale(day));
                             }

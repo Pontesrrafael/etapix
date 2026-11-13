@@ -15,7 +15,7 @@ use crate::model::{Baseline, Project, ResourceKind, Wm};
 
 /// Snapshots every task as its baseline.
 pub fn save_baseline(project: &mut Project, cals: &Calendars, schedule: &[TaskSchedule], costs: &Costs) {
-    let work: Vec<f64> = (0..project.tasks.len()).map(|i| task_work(project, i)).collect();
+    let work = work_by_task(project);
     for (i, t) in project.tasks.iter_mut().enumerate() {
         let tl = cals.task(i);
         t.baseline = Some(Baseline {
@@ -28,14 +28,15 @@ pub fn save_baseline(project: &mut Project, cals: &Calendars, schedule: &[TaskSc
     }
 }
 
-/// Minutes of work on a task's work-resource assignments (material quantities are not work).
-fn task_work(project: &Project, task: usize) -> f64 {
-    project
-        .assignments
-        .iter()
-        .filter(|a| a.task == task && project.resources[a.resource].kind == ResourceKind::Work)
-        .map(|a| a.work())
-        .sum()
+/// Minutes of work on each task's work-resource assignments (material quantities are not work).
+fn work_by_task(project: &Project) -> Vec<f64> {
+    let mut work = vec![0.0; project.tasks.len()];
+    for a in &project.assignments {
+        if project.resources[a.resource].kind == ResourceKind::Work {
+            work[a.task] += a.work();
+        }
+    }
+    work
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,11 +54,12 @@ pub struct Tracking {
 pub fn tracking(project: &Project, cals: &Calendars, schedule: &[TaskSchedule], costs: &Costs) -> Vec<Tracking> {
     let n = project.tasks.len();
     let status = project.status_date.map(|d| cals.clock.at(d));
+    let work_of = work_by_task(project);
     let mut out: Vec<Tracking> = (0..n)
         .map(|i| {
             let t = &project.tasks[i];
             let tl = cals.task(i);
-            let work: f64 = task_work(project, i);
+            let work: f64 = work_of[i];
             let Some(b) = &t.baseline else {
                 // Without a baseline Project compares work against zero; dates show no variance.
                 return Tracking { start_variance: 0, finish_variance: 0, work_variance: work, bcws: 0.0, bcwp: 0.0, acwp: 0.0 };

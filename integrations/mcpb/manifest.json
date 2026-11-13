@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "etapix",
   "display_name": "Etapix",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Crie e edite cronogramas do Etapix e do Microsoft Project (.xml e .mpp): tarefas, estrutura, vínculos, recursos, caminho crítico, nivelamento e linha de base.",
   "long_description": "Conector do Etapix para o Claude. Agenda os projetos com o mesmo motor do Etapix e salva arquivos que abrem no Etapix e no Microsoft Project. Arquivos .mpp usam o Microsoft Project instalado na máquina; arquivos .xml funcionam sem ele.",
   "author": { "name": "rafael.pontes" },

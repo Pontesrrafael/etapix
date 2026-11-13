@@ -1,4 +1,4 @@
-Etapix para Claude e Codex 0.1.0
+Etapix para Claude e Codex 0.2.0
 
 Este pacote deixa o Claude e o Codex criarem e editarem cronogramas do Etapix e do
 Microsoft Project (.xml e .mpp).
