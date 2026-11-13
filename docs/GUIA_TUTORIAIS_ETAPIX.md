@@ -118,9 +118,11 @@ ver o cronograma em barras ao lado.
 
 **O que você pode fazer aqui:**
 - Digitar tarefas novas nas linhas vazias.
-- Editar nome, duração, início, predecessoras e nomes dos recursos.
-- Ajustar a largura das colunas e a altura das linhas.
+- Editar nome, duração, início, término, predecessoras e nomes dos recursos.
+- Ajustar a largura das colunas e a altura das linhas, e acrescentar colunas pelo cabeçalho **Adicionar Nova Coluna**.
 - Selecionar várias tarefas (Ctrl e Shift) para os comandos da faixa de opções.
+- Recolher e expandir tarefas de resumo pelo triângulo ao lado do nome.
+- No Gantt, arrastar a barra para mudar o início, puxar a ponta direita para mudar a duração, arrastar até outra barra para vincular e usar Ctrl+arrastar para ajustar o andamento.
 
 **Procedimento: Criar tarefas**
 1. Clique na coluna **Nome da Tarefa** da primeira linha vazia.
@@ -142,7 +144,7 @@ ver o cronograma em barras ao lado.
    defasagem opcional, como `2TI+2 dias` ou `3II-1d`. Separe várias com `;`.
 3. Pressione Enter.
 
-**Como conferir:** a data de início se move e uma seta liga as barras no Gantt.
+**Como conferir:** a data da tarefa se ajusta e uma seta liga as barras no Gantt saindo e chegando na ponta correspondente ao tipo de vínculo (`TI`, `II`, `TT` ou `IT`).
 
 **Se não funcionar:** "predecessora inválida" indica sintaxe fora do padrão acima; "não existe
 tarefa N" indica um número que não está na grade; "os vínculos formam um ciclo" indica que uma
@@ -152,21 +154,22 @@ tarefa depende, direta ou indiretamente, dela mesma. Nesses casos nada é altera
 1. Arraste a divisa entre dois títulos de coluna, no cabeçalho. Dois cliques ajustam a coluna ao
    maior texto.
 2. Arraste a divisa entre duas linhas, na coluna dos números.
+3. Clique em **Adicionar Nova Coluna** para exibir colunas extras (**% Concluída**, **Trabalho**, **Custo**, **Margem de Atraso Total**, **Início da Linha de Base**, **Término da Linha de Base**); clique com o botão direito no título de uma coluna adicionada para ocultá-la.
 
-**Como conferir:** o tamanho fica salvo e volta igual na próxima vez que o Etapix abrir.
+**Como conferir:** o tamanho e as colunas escolhidas ficam salvos e voltam iguais na próxima vez que o Etapix abrir.
 
 **Dicas:**
 - F2 edita a célula selecionada; Tab vai para a coluna seguinte; Delete exclui as tarefas
-  selecionadas; Insert insere uma tarefa.
+  selecionadas; Insert insere uma tarefa; Shift+F2 abre **Informações da Tarefa**; Ctrl+F abre **Localizar**.
+- PageUp e PageDown navegam uma página de linhas; Home e End vão para a primeira e a última coluna; Ctrl+Home e Ctrl+End vão para a primeira e a última tarefa visível.
 - Alt+Shift+→ recua e Alt+Shift+← avança a tarefa.
 - Ctrl+Z desfaz e Ctrl+Y refaz cada edição.
 - Dois cliques na coluna **Modo da Tarefa** alternam entre manual e automático.
-- Uma data digitada em **Início** vira a restrição "Não iniciar antes de", como no Project.
+- Uma data digitada em **Início** vira a restrição "Não iniciar antes de", como no Project. Um projeto em branco começa na próxima segunda-feira, no primeiro horário útil do calendário padrão (09:00).
 
-**Limitações e permissões:** a coluna **Término** não é editável (mude a duração). A coluna
-**Adicionar Nova Coluna** ainda não adiciona colunas. A altura vale para todas as linhas.
+**Limitações e permissões:** digitar na coluna **Término** altera a duração da tarefa em dias úteis. **Adicionar Nova Coluna** oferece **% Concluída**, **Trabalho**, **Custo**, **Margem de Atraso Total** e as datas da linha de base; as colunas padrão não são ocultáveis. A altura vale para todas as linhas.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Aba Tarefa
 
@@ -180,8 +183,7 @@ andamento das tarefas.
 - Agendar manualmente ou automaticamente, mover tarefas e respeitar vínculos (grupo **Tarefas**).
 - Recortar, copiar e colar tarefas (grupo **Área de Transferência**).
 - Escolher a fonte e o tamanho do texto (grupo **Fonte**).
-- Ver informações, adicionar à linha do tempo, rolar até a tarefa e localizar (grupos
-  **Propriedades** e **Editar**).
+- Ver informações (ou Shift+F2), adicionar à linha do tempo, rolar até a tarefa e localizar por nome (ou Ctrl+F) nos grupos **Propriedades** e **Editar**.
 
 **Procedimento: Montar uma fase com subtarefas**
 1. Selecione as tarefas que formam a fase (clique na primeira e Shift+clique na última).
@@ -211,20 +213,21 @@ coluna de indicadores.
 - **Mover** desloca a data de início em dias corridos (1 dia, 1 semana, 2 semanas ou 4 semanas,
   para frente ou para trás) e grava a restrição "Não iniciar antes de".
 - **Respeitar Vínculos** traz uma tarefa manual de volta para a data que seus vínculos indicam.
+- **Localizar** (ou Ctrl+F) procura tarefas pelo texto do nome e, ao clicar num resultado, expande resumos recolhidos, limpa o filtro se preciso e rola até a linha.
 - **Limpar** exclui as tarefas selecionadas.
 
 **Limitações e permissões:** precisa de tarefa selecionada para a maioria dos comandos. Em cinza
 nesta versão: Pincel de Formatação, Negrito/Itálico/Sublinhado, Inativar, Inspecionar, Modo,
 Entregável, Anotações, Detalhes e Preencher.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Arquivo
 
-**Para que serve:** criar, abrir e salvar projetos.
+**Para que serve:** criar, abrir, salvar e exportar projetos em PDF.
 
 **O que você pode fazer aqui:**
-- **Novo**, **Abrir**, **Salvar** e **Salvar como**.
+- **Novo**, **Abrir**, **Salvar**, **Salvar como**, **Exportar PDF** e **Exportar relatórios**.
 - Abrir, criar e salvar `.mpp` em qualquer máquina, sem o Project, mantendo no arquivo o que só o
   Project usa (modos de exibição, formatações). Abrir e salvar Project XML (`.xml`).
 
@@ -252,10 +255,9 @@ lá e tente de novo.
 - O `.mpp` é gravado primeiro num arquivo temporário: se a conversão falhar, o arquivo original
   não é alterado.
 
-**Limitações e permissões:** arquivos anteriores ao Project 2010 não abrem. Imprimir,
-Exportar, Compartilhar e Opções ainda não existem.
+**Limitações e permissões:** arquivos anteriores ao Project 2010 não abrem. **Exportar PDF** gera a tabela e o Gantt em A4 paisagem, e **Exportar relatórios** gera todos os relatórios em PDF; para imprimir, abra o PDF gerado. Compartilhar e Opções ainda não existem.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Aba Recurso
 
@@ -265,7 +267,7 @@ superalocações.
 **O que você pode fazer aqui:**
 - **Adicionar Recursos** (recurso de trabalho, 100%).
 - **Atribuir Recursos** à tarefa selecionada.
-- **Nivelar Seleção**, **Nivelar Recurso**, **Nivelar Tudo** e **Limpar Nivelamento**.
+- **Nivelar Seleção** (só as tarefas selecionadas), **Nivelar Recurso** (tarefas dos recursos da tarefa selecionada), **Nivelar Tudo** (projeto inteiro) e **Limpar Nivelamento**.
 
 **Procedimento: Atribuir recursos**
 1. Selecione a tarefa.
@@ -279,7 +281,7 @@ digite os nomes direto na coluna **Nomes dos Recursos** (separados por vírgula)
 resumo não recebem recursos.
 
 **Procedimento: Resolver superalocação**
-1. Clique em **Nivelar Tudo**.
+1. Clique em **Nivelar Tudo** para nivelar o projeto inteiro, **Nivelar Seleção** para adiar apenas as tarefas selecionadas ou **Nivelar Recurso** para nivelar as tarefas dos recursos atribuídos à tarefa selecionada.
 2. Confira as datas que mudaram.
 3. Se não gostar, use **Limpar Nivelamento** ou Ctrl+Z.
 
@@ -288,19 +290,17 @@ resumo não recebem recursos.
 **Dicas:** o nivelamento usa as opções padrão do Project e grava os atrasos de nivelamento no
 arquivo.
 
-**Limitações e permissões:** nesta versão, os três botões de nivelar nivelam o projeto inteiro.
-Em cinza: Organizador de Equipe, Pool de Recursos, Informações do recurso, Anotações, Detalhes,
-Opções de Nivelamento e Próxima Superalocação. Taxas e calendários de recurso vêm só de arquivos
-abertos.
+**Limitações e permissões:** **Nivelar Seleção** e **Nivelar Recurso** exigem uma tarefa selecionada (e, em **Nivelar Recurso**, que ela tenha recurso atribuído). Em cinza: Organizador de Equipe, Pool de Recursos, Informações do recurso, Anotações, Detalhes, Opções de Nivelamento e Próxima Superalocação. Taxas de recurso vêm de arquivos abertos; calendários de recurso podem ser editados em **Projeto > Alterar Período de Trabalho**.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Aba Projeto
 
-**Para que serve:** ajustar o projeto inteiro: data de início, linha de base e recálculo.
+**Para que serve:** ajustar o projeto inteiro: data de início, calendário de trabalho, linha de base e recálculo.
 
 **O que você pode fazer aqui:**
 - **Informações do Projeto** (data de início).
+- **Alterar Período de Trabalho** (expediente semanal e exceções/feriados do projeto ou de cada recurso).
 - **Definir Linha de Base**.
 - **Mover Projeto** (nova data de início).
 - **Calcular Projeto**.
@@ -314,23 +314,31 @@ abertos.
 
 **Se não funcionar:** definir de novo substitui a linha de base anterior. Use Ctrl+Z para voltar.
 
+**Procedimento: Alterar expediente e feriados**
+1. Clique em **Projeto > Alterar Período de Trabalho**.
+2. Escolha em **Para o calendário** o calendário do projeto ou de um recurso.
+3. Ajuste os dias úteis e turnos da semana (por exemplo, `09:00-12:00, 13:00-18:00`) ou clique em **+ Adicionar exceção** para cadastrar feriados e horários especiais.
+4. Clique em **OK**.
+
+**Como conferir:** os dias de folga ficam sombreados no Gantt e as tarefas recalculam as datas automaticamente.
+
+**Se não funcionar:** turnos sobrepostos, horas fora de `00:00–24:00` ou semana sem nenhum dia útil exibem mensagem de erro na própria janela.
+
 **Dicas:** **Mover Projeto** desloca todas as tarefas automáticas; as manuais e as restrições de
-data ficam onde estão.
+data ficam onde estão. Um projeto em branco já inicia no primeiro horário útil do calendário padrão (09:00).
 
 **Limitações e permissões:** em cinza: Subprojeto, Suplementos, Campos Personalizados, Vínculos
-Entre Projetos, EAP, Alterar Período de Trabalho, Data de Status, Atualizar Projeto e Ortografia.
-Só a linha de base 0 é gravada.
+Entre Projetos, EAP, Data de Status, Atualizar Projeto e Ortografia. Só a linha de base 0 é gravada.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Abas Exibir e Formato
 
-**Para que serve:** escolher o que ver e como: modo de exibição, zoom, escala de tempo e estilos
-das barras.
+**Para que serve:** escolher o que ver e como: modo de exibição, filtro, ordenação, nível da estrutura, zoom, escala de tempo e estilos das barras.
 
 **O que você pode fazer aqui:**
-- **Gráfico de Gantt** ou **Planilha de Tarefas**; **Planilha de Recursos** (abre o relatório
-  Recursos).
+- **Gráfico de Gantt**, **Uso da Tarefa** (horas diárias por tarefa e por recurso) ou **Planilha de Tarefas**; **Planilha de Recursos** (abre o relatório Recursos).
+- **Classificar** (por Identificação, Data de Início, Data de Término, Duração ou Nome), **Estrutura de Tópicos** (Todas as Subtarefas ou Nível 1 a 9) e **Filtro** (Sem Filtro, Tarefas Críticas, Tarefas Não Concluídas, Tarefas Concluídas, Marcos, Tarefas de Resumo ou Tarefas Atrasadas).
 - **Escala de Tempo** (Horas, Dias, Semanas, Meses), **Ampliar**, **Reduzir**, **Projeto
   Inteiro** e **Tarefas Selecionadas**.
 - Mostrar ou ocultar a **Linha do Tempo**.
@@ -344,23 +352,22 @@ das barras.
 **Como conferir:** as tarefas sem folga ficam vermelhas no Gantt.
 
 **Dicas:** Shift + roda do mouse rola o Gantt na horizontal; arrastar a divisa entre a grade e o
-Gantt muda o espaço de cada um.
+Gantt muda o espaço de cada um. Na escala **Horas**, o cabeçalho mostra os dias sobre as horas; em **Meses**, mostra os anos sobre os meses.
 
-**Limitações e permissões:** em cinza: Uso da Tarefa, Diagrama de Rede, Calendário, Organizador
-de Equipe, Uso do Recurso, Classificar, Estrutura de Tópicos, Tabelas, Realce, Filtro, Agrupar
-por, Detalhes, Janela, Macros, Estilos de Texto, Linhas de Grade, Layout, colunas e Desenho.
+**Limitações e permissões:** **Classificar** mantém a estrutura de tópicos e **Filtro** preserva os resumos das tarefas exibidas, sem mudar a ordem no arquivo. **Uso da Tarefa** é somente leitura. Em cinza: Diagrama de Rede, Calendário, Organizador de Equipe, Uso do Recurso, Outros Modos de Exibição, Tabelas, Realce, Agrupar por, Detalhes, Janela, Macros, Estilos de Texto, Linhas de Grade, Layout, colunas e Desenho.
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Aba Relatório
 
-**Para que serve:** resumir o projeto para acompanhamento.
+**Para que serve:** resumir o projeto para acompanhamento e exportar relatórios em PDF.
 
 **O que você pode fazer aqui:**
 - **Painéis:** início, término, tarefas, concluídas, folga negativa, recursos e custo total.
 - **Recursos:** unidades, tarefas e custo de cada recurso.
 - **Custos:** custo por tarefa e total.
 - **Em Andamento:** tarefas iniciadas e atrasadas.
+- **Exportar PDF:** grava todos os relatórios num arquivo PDF (A4 paisagem).
 
 **Procedimento: Ver o que está atrasado**
 1. Clique em **Em Andamento**.
@@ -370,11 +377,11 @@ por, Detalhes, Janela, Macros, Estilos de Texto, Linhas de Grade, Layout, coluna
 
 **Se não funcionar:** a lista vazia indica que nenhuma tarefa foi iniciada nem está atrasada.
 
-**Limitações e permissões:** os relatórios não são impressos nem exportados. Em cinza:
+**Limitações e permissões:** **Exportar PDF** reúne todos os relatórios num único PDF. Em cinza:
 Introdução, Personalizado, Relatórios Recentes, Comparar Projetos e Relatórios Visuais. Custos
 só aparecem quando os recursos têm taxas, custo por uso ou atribuições de custo, ou quando as tarefas têm custo fixo (dados lidos e preservados em arquivos `.mpp` e `.xml`).
 
-**Responsável / revisão:** `[A DEFINIR]`, versão 1.0, 22/10/2026.
+**Responsável / revisão:** `[A DEFINIR]`, versão 1.1, 13/11/2026.
 
 ### Linha do Tempo
 

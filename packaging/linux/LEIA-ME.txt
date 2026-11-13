@@ -9,8 +9,8 @@ aplicativos e também abre pelo terminal com o comando "etapix". O instalador ta
 registra o conector do Etapix no Claude Code e no Codex, se estiverem instalados.
 
 ARQUIVOS .MPP
-No Linux não existe Microsoft Project, então arquivos .mpp não abrem. Use Project XML
-(.xml): o Project, no Windows, abre e salva esse formato sem perder o cronograma.
+O Etapix abre, cria e salva arquivos .mpp e Project XML (.xml) no Linux por conta própria,
+sem o Microsoft Project.
 
 DESINSTALAR
   ~/.local/share/etapix/desinstalar.sh

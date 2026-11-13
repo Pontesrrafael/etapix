@@ -27,8 +27,8 @@ If these tools are not available, tell the user to install the Etapix connector 
 ## How to build a schedule
 
 1. Ask only for what you cannot infer: start date, and where to save. Default to a `.mpp` next to
-   the user's other files when Microsoft Project is installed, otherwise `.xml`. Always use
-   absolute paths.
+   the user's other files (or `.xml` when requested): Etapix reads, creates and saves `.mpp`
+   natively on Windows and Linux, without Microsoft Project installed. Always use absolute paths.
 2. `criar_projeto`, then one `adicionar_tarefas` call with the whole structure:
    - `nivel` builds the outline: a task followed by tasks with a higher `nivel` becomes their
      summary. Summaries get their dates from their subtasks: give them no duration, links or
@@ -46,8 +46,9 @@ If these tools are not available, tell the user to install the Etapix connector 
 ## Editing an existing file
 
 `ler_projeto` first, to get ids and current dates. Make the changes, then read again and tell the
-user what moved (finish date, critical path). `.mpp` files open and save through the Microsoft
-Project installed on the machine; if that fails, say so and offer `.xml`.
+user what moved (finish date, critical path). Etapix opens, creates and saves `.mpp` files by
+itself, without Microsoft Project; if a file cannot be read or saved as `.mpp` (for instance, a
+format older than Project 2010), say so and offer `.xml`.
 
 ## Conventions
 

@@ -64,6 +64,26 @@ powershell -File tools\roundtrip.ps1 -InDir C:\dev\pjsched\target\roundtrip\in -
 The project pins the `stable-x86_64-pc-windows-gnu` toolchain in `rust-toolchain.toml`, because
 that toolchain ships its own linker and this machine has no MSVC Build Tools.
 
+### Rodar os testes no Windows (toolchain GNU)
+
+Para compilar e testar todo o workspace (`pjsched` e `etapix`) no Windows com a toolchain `stable-x86_64-pc-windows-gnu`, adicione o MinGW-w64 portátil ao `PATH` (para o montador `as.exe` exigido por `dlltool`) e defina `LIBRARY_PATH` apontando para as bibliotecas do MinGW-w64 (pois `libshlwapi.a` não vem embutida na toolchain GNU do `rustup`):
+
+No PowerShell:
+
+```powershell
+$env:PATH = "$env:USERPROFILE\tools\mingw64\bin;$env:PATH"
+$env:LIBRARY_PATH = "$env:USERPROFILE\tools\mingw64\x86_64-w64-mingw32\lib"
+cargo test --workspace
+```
+
+No Git Bash:
+
+```bash
+export PATH="$USERPROFILE/tools/mingw64/bin:$PATH"
+export LIBRARY_PATH="$USERPROFILE/tools/mingw64/x86_64-w64-mingw32/lib"
+cargo test --workspace
+```
+
 ## Desktop app (`app/`) and installer (`setup/`)
 
 Etapix is a desktop planner for internal use, built with egui on top of the engine and laid out
